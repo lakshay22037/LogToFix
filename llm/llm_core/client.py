@@ -5,7 +5,7 @@ import anthropic
 
 from llm_core.schemas import FixSuggestion
 
-DEFAULT_MODEL = os.environ.get("LLM_MODEL", "claude-opus-5")
+DEFAULT_MODEL = os.environ.get("LLM_MODEL", "claude-sonnet-5")
 
 
 class LLMSuggestionError(Exception):
