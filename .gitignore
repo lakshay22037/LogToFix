@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Demo repo runtime artifacts
+data/demo-repo/logs/*.log*
+data/demo-repo/demo.db
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/

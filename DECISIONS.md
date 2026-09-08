@@ -20,6 +20,191 @@ Interview angle (say this out loud): ...
 
 ---
 
+## 2026-09-08 Decision: Live log fetching mechanism (file-tailing shipper, decoupled from the app)
+
+Chose: A standalone log-shipper component that tails the demo app's log file
+continuously (via the `watchdog` library or a poll-and-read-new-bytes loop,
+`tail -f`-style) and forwards new lines to `POST /logs/ingest`, rather than
+having the app call the ingestion API directly.
+
+Alternatives considered:
+- **Direct push from the app** (app calls `/logs/ingest` itself on every
+  error) — rejected because it couples the monitored application to
+  Log-to-Fix's existence; a real production service has no idea a
+  monitoring tool is watching it, and coupling them here would misrepresent
+  how production log monitoring actually works.
+- **Polling a remote log store on a fixed interval only** — considered as
+  simpler, but rejected as the sole mechanism because it introduces
+  detection latency proportional to the poll interval, undermining the
+  "live" part of the pitch; file-tailing (or event-driven watching) reacts
+  as new lines are written.
+
+Why we chose this: This mirrors how real log monitoring agents work
+(Filebeat, Fluentd, Vector, or cloud-native equivalents like CloudWatch Logs
+subscriptions) — they watch a log source and forward events, entirely
+decoupled from both the application producing logs and the system consuming
+them. Building our own lightweight version of that role is what makes the
+log source swappable later (see the canonical-schema decision below) without
+changing anything downstream.
+Tradeoff / what breaks at scale: A single file-tailing process watching one
+log file doesn't scale to many services/hosts — real infrastructure runs one
+agent per host/container and centralizes via a message bus (Kafka) or a
+managed log pipeline. Acceptable here since we're monitoring one demo repo;
+flagged as the first thing to replace if this needed to watch multiple
+services.
+Interview angle: "I built the log shipper as its own decoupled component,
+not a function the monitored app calls — that's the same separation real
+tools like Filebeat maintain, and it's what lets me swap the log source
+later without touching ingestion or processing code."
+
+---
+
+## 2026-09-08 Decision: Canonical log schema + per-source adapters (standardized ingestion)
+
+Chose: Define one canonical internal log event schema (timestamp, level,
+service, message, stack_trace, source_type, raw, correlation_id) that every
+log event is normalized into before it reaches the core pipeline. Each log
+source (local file tail, AWS CloudWatch, Azure Monitor, future sources) gets
+its own adapter implementing a common `parse(raw_event) -> NormalizedLogEvent`
+interface. Normalization happens at the edge, in the adapter/shipper — the
+`POST /logs/ingest` endpoint only ever accepts the canonical schema.
+
+Alternatives considered:
+- **Accept raw per-source payloads at the ingestion API and branch on
+  `source_type` internally** — rejected because it spreads source-specific
+  parsing logic (CloudWatch's JSON shape, Azure Monitor's schema, a raw
+  Apache log line) throughout the core pipeline instead of isolating it,
+  and makes testing correlation/RAG/LLM logic dependent on faking multiple
+  raw formats instead of one clean schema.
+- **Require every log source to already emit logs in our exact format** —
+  rejected as unrealistic; we don't control the log format of AWS/Azure
+  services or arbitrary third-party apps, so the system must adapt to
+  sources, not the other way around.
+Why we chose this: This is the same idea as OpenTelemetry's receiver/
+processor model or a standard ETL "landing zone" — isolate source-specific
+variability at the boundary, keep everything downstream (correlation, RAG,
+LLM, dashboard) working against one uniform shape. It means adding a new
+cloud source later (e.g. GCP Logging) is "write one new adapter," not "touch
+the core pipeline."
+Tradeoff / what breaks at scale: Every new source requires writing and
+maintaining its own adapter — this is a deliberate ongoing cost, traded
+against never having source-specific branching logic contaminate the core
+pipeline.
+Interview angle: "I designed a canonical log schema with per-source adapters
+specifically so this could run against AWS, Azure, or a local file
+interchangeably — the ingestion API and everything downstream never needs to
+know or care where a log actually came from."
+
+---
+
+## 2026-09-08 Decision: Data sourcing strategy (three separate sources, not one)
+
+Chose: Use three data sources for three distinct purposes, not one unified
+dataset:
+1. **Our own seeded demo repo** (`data/demo-repo/`) — the live error source.
+   A small Python app we write ourselves, with intentionally seeded bugs
+   (SQL injection, missing validation, off-by-one, race condition, N+1).
+   Running it (or a script that periodically triggers its bugs) produces the
+   log lines that flow through ingestion → git-blame correlation.
+2. **Loghub** — reference only, for realistic log *format*/parsing patterns
+   (e.g. how a real Apache/HDFS log line is structured). Not wired into the
+   live pipeline directly.
+3. **BugsInPy / SWE-bench** — the RAG corpus. 20-30 real (error → fix) pairs
+   from real Python projects, embedded into pgvector as the "has a similar
+   bug been fixed before" reference set used in Phase 2.
+
+Alternatives considered:
+- **Use Loghub logs as the live error stream directly** — rejected because
+  Loghub logs aren't attached to any codebase we have access to; `git blame`
+  correlation requires errors that trace back to a repo whose history we
+  control. Loghub logs would dead-end at the correlation step.
+- **Use BugsInPy/SWE-bench repos themselves as the "live" monitored repo**
+  instead of a custom demo repo — considered, since it would mean real
+  historical bugs and real fix history in one place. Rejected because these
+  repos are large, unfamiliar, and not designed to run standalone or emit
+  logs on demand — seeding our own small repo gives full control over
+  making errors reproducible and demoable on command, which matters more
+  for demo reliability than dataset "realism."
+- **Skip real datasets entirely and only use synthetic bugs** — rejected
+  because BugsInPy/SWE-bench fix pairs materially strengthen the RAG story
+  (real-world fix patterns instead of only ones we invented ourselves), and
+  Loghub format patterns make the log parser more realistic than inventing
+  a log format from scratch.
+
+Why we chose this: Each dataset is used for exactly the property it's
+actually good for — Loghub for format realism, BugsInPy/SWE-bench for a real
+historical-fix corpus, and a custom repo for the one thing neither dataset
+can provide: a controllable, git-history-attached live error source that we
+can seed and reproduce on demand.
+Tradeoff / what breaks at scale: The custom demo repo means our seeded bugs
+are somewhat "toy" compared to production-scale bug complexity — acceptable
+here since demo reproducibility matters more than bug realism, but worth
+being upfront about if asked "are these real production bugs?"
+Interview angle: "I used three data sources deliberately, not because I
+couldn't find one dataset that did everything, but because no single
+dataset could satisfy live-error-generation, realistic log formatting, and
+a historical-fix RAG corpus at the same time — each needed a source suited
+to that specific property."
+
+---
+
+## 2026-09-08 Decision: Project execution flow (walking skeleton, then deepen)
+
+Chose: Build a thin, fully-working end-to-end slice first (one error type,
+minimal scope, no RAG, no polish), then deepen it in phases: RAG → breadth
+(more bug types) → hardening (tests/security/observability) → load testing →
+deploy/CI → interview packaging. Full phase breakdown:
+
+0. Foundation (seeded demo repo, docker-compose skeleton, .gitignore/.env)
+1. Walking skeleton — ingest → git-blame correlate → LLM fix (no RAG) →
+   dashboard, for one error type only
+2. RAG — embeddings, pgvector, retrieval, measured against a labeled eval set
+3. Breadth — add remaining seeded bug types through the now-proven pipeline
+4. Hardening — tests, structured logging, rate limiting, security pass
+5. Load testing — real numbers on where it actually breaks
+6. Deploy + CI
+7. Interview packaging — README, architecture diagram, STAR stories
+
+Alternatives considered:
+- **Layer-by-layer** (build all of `frontend/` fully, then all of `backend/`,
+  then all of `llm/`) — rejected because nothing is actually testable
+  end-to-end until every layer is finished; integration problems (e.g. "how
+  do I map a stack trace to a git blame result reliably") would only surface
+  in the final week, when they're most expensive to fix and least fun to
+  discover under time pressure.
+- **Feature-complete-per-bug-type** (fully build ingest→fix→RAG→dashboard for
+  the SQL injection bug, then repeat fully for the next bug type, etc.) —
+  rejected because it means re-solving the same infra problems (queueing,
+  git correlation, LLM prompting) repeatedly instead of proving them once
+  and reusing them; it also delays RAG (the highest-learning-value part)
+  until after several bug types are already fully built.
+- **RAG-first** (build the RAG/embedding pipeline before a working ingest→fix
+  pipeline exists) — rejected because RAG has nothing to retrieve *into* yet
+  without a working correlation + fix-generation path; building it first
+  means building and testing it against fabricated inputs instead of real
+  ones.
+
+Why we chose this: This is the "walking skeleton" pattern (build the
+thinnest possible version of the entire system first, prove every
+architectural decision — queue, git integration, LLM call, DB — actually
+works together, then add depth/breadth incrementally). It front-loads
+integration risk instead of deferring it, and it means at every phase
+boundary there is a demoable, working system rather than a pile of
+half-finished layers.
+Tradeoff / what breaks at scale: The walking skeleton's Phase 1 code (e.g.
+the git correlation logic, the LLM prompt) is deliberately minimal and will
+likely need rework once RAG and multiple bug types are added — we're
+accepting some rework cost in exchange for de-risking integration early and
+having something demoable at every step. This is intentional, not technical
+debt from carelessness.
+Interview angle: "I built a walking skeleton first — the thinnest possible
+version of the full pipeline — specifically so integration risk (queueing,
+git correlation, LLM calls, DB writes all working together) surfaced in week
+one instead of week six, when it would've been far more expensive to
+untangle."
+
+---
+
 ## 2026-09-08 Decision: Overall stack
 
 ### Frontend — React (Vite)
