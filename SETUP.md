@@ -1,31 +1,33 @@
 # Running Log-to-Fix locally
 
-Current state: walking-skeleton (Phase 1) — demo app → file-tail shipper →
-FastAPI ingestion → Celery/Redis queue → git-blame correlation → LLM fix
-suggestion. Postgres, RAG, and the frontend land in later phases. This
-covers running what exists today on any machine with Python 3.9+ and Docker.
+Current state: walking-skeleton (Phase 1, done) — demo app → file-tail
+shipper → FastAPI ingestion → Celery/Redis queue → git-blame correlation →
+LLM fix suggestion → Postgres persistence. RAG and the frontend land in
+later steps of Phase 2. This covers running what exists today on any
+machine with Python 3.9+ and Docker.
 
-You'll run five processes, each in its own terminal, in this order.
+You'll run six processes, each in its own terminal, in this order.
 
 ## 1. Prerequisites
 
 - Python 3.9 or newer (`python3 --version`)
 - `pip`
-- Docker (for Redis) — or a local Redis install if you'd rather not use Docker
+- Docker (for Redis + Postgres) — or local installs of both if you'd rather
+  not use Docker
 - An Anthropic API key (get one at console.anthropic.com) — copy
-  `.env.example` to `.env` in `backend/` and set `ANTHROPIC_API_KEY`, or
-  export it in Terminal 3's shell before starting the backend/worker.
-  Without it, correlation and everything else still works — only the final
-  fix-suggestion step fails (logged, doesn't crash the worker).
+  `.env.example` to `.env` at the repo root and set `ANTHROPIC_API_KEY` and
+  `LLM_PROVIDER=claude`. `.env` is loaded automatically. Leaving
+  `LLM_PROVIDER=fake` (the default) skips real API calls entirely — useful
+  since there's no free tier for the Claude API; see DECISIONS.md.
 
-## 2. Terminal 1 — Redis (the Celery broker)
+## 2. Terminal 1 — Redis + Postgres
 
 ```bash
-docker compose up redis
+docker compose up redis postgres
 ```
 
-Leave this running. (No Docker? Install Redis locally and run
-`redis-server` instead — same effect.)
+Leave this running. (No Docker? Install both locally instead — Redis via
+`redis-server`, Postgres with the `pgvector` extension available.)
 
 ## 3. Terminal 2 — the demo app (the "live" error source)
 
@@ -57,6 +59,7 @@ source .venv/bin/activate
 .venv\Scripts\Activate.ps1
 
 pip install -r requirements.txt
+alembic upgrade head   # creates the schema — only needed once (or after a pull with new migrations)
 python3 -m uvicorn app.main:app --port 8000
 ```
 
@@ -72,9 +75,9 @@ source .venv/bin/activate   # same venv as step 4 (macOS/Linux); Windows: .venv\
 python3 -m celery -A app.celery_app worker --loglevel=info
 ```
 
-Picks up tasks enqueued by the ingestion API and processes them (currently a
-logging stub — git-blame correlation is the next piece to land here). Leave
-this running.
+Picks up tasks enqueued by the ingestion API: correlates the error to a
+commit via git blame, asks the LLM for a fix suggestion, and persists both
+to Postgres. Leave this running.
 
 ## 6. Terminal 5 — the log shipper (tails the demo app's logs, forwards to ingestion)
 
@@ -106,8 +109,10 @@ python traffic_generator.py
 - Terminal 6 (shipper) picks up new log lines as they're written.
 - Terminal 3 (backend) returns `202 Accepted` immediately for each ingested
   event — it doesn't wait for processing.
-- Terminal 4 (Celery worker) logs `Processing event: ...` for each task it
-  picks up from the queue.
+- Terminal 4 (Celery worker) logs `Processing event`, `Correlated to commit`,
+  and (if `LLM_PROVIDER=claude`) `Suggested fix` for each task it picks up.
+- Every processed error and its fix suggestion are persisted to Postgres —
+  check with `psql $DATABASE_URL -c "select * from log_events;"`.
 
 ## Stopping everything
 
@@ -121,6 +126,6 @@ rm -rf backend/.venv data/demo-repo/.venv data/demo-repo/demo.db data/demo-repo/
 
 ---
 
-This file will be updated as later phases add Postgres, the RAG pipeline,
-and the frontend — at that point `docker compose up` will replace most of
-the manual steps above.
+This file will be updated as later steps add the RAG pipeline and the
+frontend — at that point `docker compose up` plus one script will replace
+most of the manual steps above.
