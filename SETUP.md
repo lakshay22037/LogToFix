@@ -1,9 +1,9 @@
 # Running Log-to-Fix locally
 
 Current state: walking-skeleton (Phase 1) — demo app → file-tail shipper →
-FastAPI ingestion → Celery/Redis queue → worker stub. Postgres, the RAG
-pipeline, and the frontend land in later phases. This covers running what
-exists today on any machine with Python 3.9+ and Docker.
+FastAPI ingestion → Celery/Redis queue → git-blame correlation → LLM fix
+suggestion. Postgres, RAG, and the frontend land in later phases. This
+covers running what exists today on any machine with Python 3.9+ and Docker.
 
 You'll run five processes, each in its own terminal, in this order.
 
@@ -12,6 +12,11 @@ You'll run five processes, each in its own terminal, in this order.
 - Python 3.9 or newer (`python3 --version`)
 - `pip`
 - Docker (for Redis) — or a local Redis install if you'd rather not use Docker
+- An Anthropic API key (get one at console.anthropic.com) — copy
+  `.env.example` to `.env` in `backend/` and set `ANTHROPIC_API_KEY`, or
+  export it in Terminal 3's shell before starting the backend/worker.
+  Without it, correlation and everything else still works — only the final
+  fix-suggestion step fails (logged, doesn't crash the worker).
 
 ## 2. Terminal 1 — Redis (the Celery broker)
 
