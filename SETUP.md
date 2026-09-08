@@ -25,6 +25,10 @@ seventh, optional one to generate traffic.
 - A Supabase project, for login (see "Setting up Supabase Auth" below).
   Without one configured, the dashboard shows a clear "sign-in isn't
   configured yet" message rather than a broken login button.
+- Optional: a `FERNET_KEY` in `.env` (generate with
+  `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)
+  to use the "Open PR" GitHub integration, which stores a repo PAT
+  encrypted at rest. Every other feature works without it.
 
 ## Setting up Supabase Auth (Google sign-in)
 
@@ -122,9 +126,10 @@ separate login page); once signed in, that same `/` shows your projects
 dashboard instead. Once signed in:
 
 1. Create a project (e.g. "demo-repo").
-2. Inside it, **+ Add source** → type **File**, name it anything, and note
-   the source's id shown after creation (visible in the sources list, or
-   via `GET /projects/{id}/sources`).
+2. Inside it, **+ Add source** → type **File**, name it anything. After
+   creation you're shown the source's id and a one-time API key — copy
+   both now, the key isn't shown again (only its hash is stored — see
+   DECISIONS.md: "Ingestion authentication").
 
 ## 7. Terminal 6 — the log shipper (tails the demo app's logs, forwards to ingestion)
 
@@ -132,12 +137,13 @@ dashboard instead. Once signed in:
 cd backend
 source .venv/bin/activate   # same venv as step 4 (macOS/Linux); Windows: .venv\Scripts\Activate.ps1
 
-python3 -m app.shipper ../data/demo-repo/logs/app.log --source-id <the log source id from step 6>
+python3 -m app.shipper ../data/demo-repo/logs/app.log --source-id <the log source id> --api-key <the api key from step 6>
 ```
 
 This process watches the log file and POSTs each new parsed event to
-`http://localhost:8000/logs/ingest`, tagged with that source id so it shows
-up under the right project. Leave this running.
+`http://localhost:8000/logs/ingest`, tagged with that source id and
+authenticated with its API key (required — unauthenticated ingestion is
+rejected) so it shows up under the right project. Leave this running.
 
 ## 8. Terminal 7 (optional) — generate traffic
 

@@ -3,13 +3,15 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 import app.env  # noqa: F401 — loads .env as a side effect
+from app.db import get_session
 from app.logging_config import configure_logging, correlation_id_var
+from app.models import LogSource, hash_source_key
 from app.rate_limit import enforce_rate_limit
-from app.routers import errors, projects
+from app.routers import analytics, issues, projects
 from app.schemas.log_event import NormalizedLogEvent
 from app.tasks import process_log_event
 
@@ -59,7 +61,23 @@ def health():
 
 
 @app.post("/logs/ingest", status_code=202, dependencies=[Depends(enforce_rate_limit)])
-def ingest_log(event: NormalizedLogEvent):
+def ingest_log(
+    event: NormalizedLogEvent,
+    x_api_key: str = Header(None),
+    session=Depends(get_session),
+):
+    # Closes what was originally an unauthenticated endpoint: a shipper
+    # must present the per-source key issued at source creation, matched
+    # by hash (see models.py: LogSource.api_key_hash) — and event.source_id
+    # must actually name that same source, so a leaked key for one source
+    # can't be used to inject events tagged as another.
+    if not x_api_key or event.source_id is None:
+        raise HTTPException(status_code=401, detail="Missing X-API-Key header or source_id")
+
+    source = session.query(LogSource).filter(LogSource.id == event.source_id).first()
+    if source is None or source.api_key_hash != hash_source_key(x_api_key):
+        raise HTTPException(status_code=401, detail="Invalid API key for this source")
+
     if event.correlation_id is None:
         event.correlation_id = correlation_id_var.get()
     logger.info("Ingested event: %s [%s] %s", event.level, event.service, event.message)
@@ -68,4 +86,5 @@ def ingest_log(event: NormalizedLogEvent):
 
 
 app.include_router(projects.router)
-app.include_router(errors.router)
+app.include_router(issues.router)
+app.include_router(analytics.router)

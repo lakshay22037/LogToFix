@@ -40,6 +40,16 @@ export default function HomePage() {
 
 function HomeHeader() {
   const { status, session, signOut } = useAuth();
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await signOut();
+    } finally {
+      setSigningOut(false);
+    }
+  };
 
   return (
     <header className="mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between px-6 py-4">
@@ -48,11 +58,12 @@ function HomeHeader() {
         <div className="flex items-center gap-3">
           <span className="hidden text-sm text-zinc-400 sm:inline">{session?.user?.email}</span>
           <button
-            onClick={signOut}
+            onClick={handleSignOut}
+            disabled={signingOut}
             type="button"
-            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-zinc-500 hover:text-white"
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-zinc-300 transition duration-150 hover:border-zinc-500 hover:bg-white/5 hover:text-white active:scale-[0.96] disabled:opacity-60"
           >
-            Sign out
+            {signingOut ? "Signing out…" : "Sign out"}
           </button>
         </div>
       ) : null}
@@ -93,6 +104,27 @@ function GoogleIcon() {
 
 function MarketingContent() {
   const { signInWithGoogle } = useAuth();
+  const [signingIn, setSigningIn] = useState(false);
+  const [signInError, setSignInError] = useState(null);
+
+  const handleSignIn = async () => {
+    setSigningIn(true);
+    setSignInError(null);
+    try {
+      const { error } = await signInWithGoogle();
+      // A successful call navigates the browser away to Google's consent
+      // screen — if we're still here, it didn't (e.g. popup/redirect
+      // blocked), so surface that instead of leaving the button stuck on
+      // "Redirecting…" forever.
+      if (error) {
+        setSignInError(error.message || "Couldn't start Google sign-in.");
+        setSigningIn(false);
+      }
+    } catch {
+      setSignInError("Couldn't reach Google. Check your connection and try again.");
+      setSigningIn(false);
+    }
+  };
 
   return (
     <section className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 items-center gap-8 overflow-y-auto px-6 py-4 lg:grid-cols-2 lg:gap-12 lg:overflow-visible">
@@ -139,14 +171,27 @@ function MarketingContent() {
           transition={{ delay: 0.15 }}
           className="mt-6 flex flex-col items-center gap-4 lg:items-start"
         >
-          <button
-            onClick={signInWithGoogle}
-            type="button"
-            className="flex items-center gap-3 rounded-lg bg-white px-6 py-3 text-sm font-semibold text-black shadow-lg transition hover:bg-zinc-200"
-          >
-            <GoogleIcon />
-            Get started with Google
-          </button>
+          <div>
+            <button
+              onClick={handleSignIn}
+              disabled={signingIn}
+              type="button"
+              className="flex items-center gap-3 rounded-lg bg-white px-6 py-3 text-sm font-semibold text-black shadow-lg shadow-black/20 transition duration-150 hover:-translate-y-0.5 hover:bg-zinc-100 hover:shadow-xl hover:shadow-brand-500/10 active:translate-y-0 active:scale-[0.98] active:bg-zinc-200 disabled:pointer-events-none disabled:opacity-70"
+            >
+              {signingIn ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
+                  Redirecting to Google…
+                </>
+              ) : (
+                <>
+                  <GoogleIcon />
+                  Get started with Google
+                </>
+              )}
+            </button>
+            {signInError && <p className="mt-2 text-xs text-bad-400">{signInError}</p>}
+          </div>
 
           <div className="flex flex-wrap justify-center gap-x-4 gap-y-1.5 lg:justify-start">
             {HIGHLIGHTS.map((item) => (
@@ -212,7 +257,7 @@ function DashboardContent() {
         <button
           onClick={() => setModalOpen(true)}
           type="button"
-          className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-600/20 transition hover:bg-brand-400"
+          className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-600/20 transition duration-150 hover:bg-brand-400 hover:shadow-brand-500/30 active:scale-[0.97] active:bg-brand-600"
         >
           + New project
         </button>
@@ -249,7 +294,7 @@ function DashboardContent() {
             >
               <Link
                 to={`/projects/${project.id}`}
-                className="block rounded-xl border border-border bg-surface p-5 transition hover:border-brand-500/50 hover:bg-surface-raised"
+                className="block rounded-xl border border-border bg-surface p-5 transition duration-150 hover:-translate-y-0.5 hover:border-brand-500/50 hover:bg-surface-raised hover:shadow-lg hover:shadow-black/20 active:translate-y-0 active:scale-[0.99]"
               >
                 <h3 className="font-semibold text-white">{project.name}</h3>
                 <p className="mt-1 text-xs text-zinc-500">
@@ -283,7 +328,7 @@ function DashboardContent() {
           <button
             type="submit"
             disabled={creating || !name.trim()}
-            className="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition duration-150 hover:bg-brand-400 active:scale-[0.98] active:bg-brand-600 disabled:pointer-events-none disabled:opacity-50"
           >
             {creating ? "Creating…" : "Create project"}
           </button>

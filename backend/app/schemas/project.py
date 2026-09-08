@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,6 +16,12 @@ class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
 
 
+class ProjectSettingsUpdate(BaseModel):
+    webhook_url: Optional[str] = None
+    github_repo: Optional[str] = None
+    github_token: Optional[str] = None  # write-only; never echoed back
+
+
 class ProjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -23,6 +29,9 @@ class ProjectOut(BaseModel):
     name: str
     created_at: datetime
     source_count: int = 0
+    webhook_url: Optional[str] = None
+    github_repo: Optional[str] = None
+    github_connected: bool = False
 
 
 class LogSourceCreate(BaseModel):
@@ -42,9 +51,34 @@ class LogSourceOut(BaseModel):
     created_at: datetime
 
 
+class LogSourceCreated(LogSourceOut):
+    # Only returned once, at creation time — the shipper must copy it then.
+    # We don't store it anywhere retrievable in plaintext after this
+    # response, matching how most API-key UXes ("copy it now, you won't
+    # see it again") avoid keeping a long-lived plaintext copy in transit.
+    api_key: str
+
+
 class ProjectListResponse(BaseModel):
     items: List[ProjectOut]
 
 
 class LogSourceListResponse(BaseModel):
     items: List[LogSourceOut]
+
+
+class ProjectMemberInvite(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+
+class ProjectMemberOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    email: str
+    user_id: Optional[str]
+    invited_at: datetime
+
+
+class ProjectMemberListResponse(BaseModel):
+    items: List[ProjectMemberOut]

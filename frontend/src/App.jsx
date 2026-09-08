@@ -1,8 +1,8 @@
 import { Route, Routes } from "react-router-dom";
 
 import ProtectedRoute from "./components/ProtectedRoute";
-import ErrorDetailPage from "./pages/ErrorDetailPage";
 import HomePage from "./pages/HomePage";
+import IssueDetailPage from "./pages/IssueDetailPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
 
 export default function App() {
@@ -18,10 +18,10 @@ export default function App() {
         }
       />
       <Route
-        path="/projects/:projectId/errors/:id"
+        path="/projects/:projectId/issues/:id"
         element={
           <ProtectedRoute>
-            <ErrorDetailPage />
+            <IssueDetailPage />
           </ProtectedRoute>
         }
       />

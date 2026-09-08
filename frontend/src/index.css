@@ -74,6 +74,32 @@ body {
   color: white;
 }
 
+/* Browsers only give <a> a pointer cursor by default — <button> stays
+   "default" (an arrow) unless told otherwise, which reads as "not
+   clickable" even though it is. This is a global affordance fix rather
+   than a per-component class so no future button can silently ship
+   without it. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* Consistent keyboard-focus ring in the brand color — buttons/links here
+   are custom-styled (often no border), so the browser's default outline
+   can be invisible or clipped by rounded corners without this. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 /* Thin, unobtrusive scrollbars for the classy-dashboard feel */
 * {
   scrollbar-width: thin;

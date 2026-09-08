@@ -79,18 +79,69 @@ function ConfigFields({ sourceType, config, setConfig }) {
   return null;
 }
 
+function CreatedSourceKey({ source, onDone }) {
+  const [copied, setCopied] = useState(false);
+  const shipCommand = `python3 -m app.shipper <log-file> --source-id ${source.id} --api-key ${source.api_key}`;
+
+  const copy = () => {
+    navigator.clipboard?.writeText(source.api_key);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-zinc-300">
+        <span className="font-semibold text-white">{source.name}</span> was created. Copy this API key now — it
+        won't be shown again.
+      </p>
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-black/30 px-3 py-2">
+        <code className="flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-brand-400">
+          {source.api_key}
+        </code>
+        <button
+          type="button"
+          onClick={copy}
+          className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium transition duration-150 active:scale-95 ${
+            copied ? "bg-good-500/15 text-good-400" : "bg-white/5 text-zinc-300 hover:bg-white/10"
+          }`}
+        >
+          {copied ? "Copied ✓" : "Copy"}
+        </button>
+      </div>
+      {source.source_type === "file" && (
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-zinc-400">Start shipping logs</p>
+          <pre className="overflow-x-auto rounded-lg border border-border bg-black/30 px-3 py-2 font-mono text-[11px] text-zinc-400">
+            {shipCommand}
+          </pre>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onDone}
+        className="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition duration-150 hover:bg-brand-400 active:scale-[0.98] active:bg-brand-600"
+      >
+        Done
+      </button>
+    </div>
+  );
+}
+
 export default function AddLogSourceModal({ open, onClose, projectId, onCreated }) {
   const [sourceType, setSourceType] = useState("file");
   const [name, setName] = useState("");
   const [config, setConfig] = useState({});
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
+  const [createdSource, setCreatedSource] = useState(null);
 
   const reset = () => {
     setSourceType("file");
     setName("");
     setConfig({});
     setError(null);
+    setCreatedSource(null);
   };
 
   const handleClose = () => {
@@ -104,15 +155,23 @@ export default function AddLogSourceModal({ open, onClose, projectId, onCreated 
     setCreating(true);
     setError(null);
     try {
-      await createLogSource(projectId, { name: name.trim(), sourceType, config });
+      const source = await createLogSource(projectId, { name: name.trim(), sourceType, config });
       onCreated();
-      handleClose();
+      setCreatedSource(source);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create log source");
     } finally {
       setCreating(false);
     }
   };
+
+  if (createdSource) {
+    return (
+      <Modal open={open} onClose={handleClose} title="Add log source">
+        <CreatedSourceKey source={createdSource} onDone={handleClose} />
+      </Modal>
+    );
+  }
 
   return (
     <Modal open={open} onClose={handleClose} title="Add log source">
@@ -125,10 +184,10 @@ export default function AddLogSourceModal({ open, onClose, projectId, onCreated 
                 key={type.value}
                 type="button"
                 onClick={() => setSourceType(type.value)}
-                className={`relative rounded-lg border px-2 py-3 text-center text-xs font-medium transition ${
+                className={`relative rounded-lg border px-2 py-3 text-center text-xs font-medium transition duration-150 active:scale-95 ${
                   sourceType === type.value
                     ? "border-brand-500 bg-brand-500/10 text-white"
-                    : "border-border bg-black/20 text-zinc-400 hover:border-zinc-600"
+                    : "border-border bg-black/20 text-zinc-400 hover:border-zinc-600 hover:bg-white/5 hover:text-zinc-200"
                 }`}
               >
                 <div className="mb-1 text-lg">{type.icon}</div>
@@ -163,7 +222,7 @@ export default function AddLogSourceModal({ open, onClose, projectId, onCreated 
         <button
           type="submit"
           disabled={creating || !name.trim()}
-          className="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition duration-150 hover:bg-brand-400 active:scale-[0.98] active:bg-brand-600 disabled:pointer-events-none disabled:opacity-50"
         >
           {creating ? "Adding…" : "Add source"}
         </button>

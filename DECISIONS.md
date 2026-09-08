@@ -1017,3 +1017,91 @@ scope creep discovered mid-build.
 Interview angle: "I organized by responsibility instead of by language
 specifically so the RAG/LLM logic — the part most worth discussing — has its
 own clear boundary instead of being buried inside a generic backend folder."
+
+---
+
+## 2026-09-08 Decision: Product roadmap sprint — issue grouping, ingestion auth, alerting, triage, GitHub PRs, analytics, feedback loop, team sharing
+
+Chose: implemented the full PM-proposed roadmap in one dependency-ordered
+pass rather than picking a subset, since several later features build on
+the first two:
+
+- **Issue grouping/deduplication** — new `Issue` model, fingerprinted by
+  `(commit, file, line)` (falling back to `(service, message)` when
+  correlation fails). Repeated occurrences of the same fingerprint bump
+  `occurrence_count`/`last_seen` on the existing Issue instead of creating
+  a new row, and — critically — skip re-running correlation/RAG/LLM
+  entirely for duplicates. `/projects/{id}/errors` is renamed to
+  `/projects/{id}/issues` (clean rename, not a compat shim).
+- **Ingestion authentication** — `LogSource` now carries a SHA-256
+  `api_key_hash`; a plaintext key is generated once at source creation and
+  shown exactly once (never stored in recoverable form, like a password).
+  `POST /logs/ingest` now requires `X-API-Key` + `source_id` and 401s
+  otherwise, closing what was an open, unauthenticated endpoint.
+- **Alerting** — a generic (not Slack-SDK-specific) webhook URl per
+  project, POSTed a Slack-compatible `{"text": ...}` payload on every new
+  Issue. Best-effort — a failed delivery never fails ingestion.
+- **Triage state** — `Issue.status` (open/acknowledged/resolved/ignored)
+  with a `PATCH` endpoint and dashboard filter/actions.
+- **One-click "Open PR"** — `app/github_integration.py` applies the
+  suggested diff on a fresh branch in the local repo checkout (the same
+  one `correlate_error_to_commit` already git-blames), pushes it, and
+  opens a PR via the GitHub REST API. The code change still goes through
+  GitHub's normal PR review/merge flow — nothing is auto-applied to the
+  target branch; the PR *is* the human-reviewable proposal (see
+  ENGINEERING_STANDARDS.md §3 / CLAUDE.md's working agreement). Requires a
+  project-level GitHub repo + PAT.
+- **Analytics dashboard** — `/projects/{id}/analytics`: open/resolved
+  counts, occurrences, average confidence, issues/day, top services,
+  average time-to-resolution.
+- **Fix outcome feedback loop** — marking an Issue "resolved" embeds its
+  title and adds the confirmed-working diff to the `fix_examples` RAG
+  corpus (`source="resolved_issue"`) — a human's real confirmation is
+  stronger ground truth than an unvalidated LLM output.
+- **Team access** — `ProjectMember` (email + nullable `user_id`). Supabase's
+  user directory isn't queryable from our backend, so an invite is matched
+  to a real user id lazily, the first time that email actually signs in
+  and hits any authenticated endpoint — not at invite time.
+
+Alternatives considered:
+- Re-diagnosing every occurrence of a bug (skip dedup) — rejected; the
+  earlier load-testing finding was that the LLM call dominates cost and
+  latency, so this would multiply the worst part of the pipeline for
+  duplicate, already-understood errors.
+- Storing the ingestion API key in plaintext (simpler to implement, no
+  hashing) — rejected. It's a real bearer credential exactly like a
+  password; hashing it and showing the plaintext once follows the same
+  convention as GitHub/Stripe-style API keys.
+- Applying the LLM's diff via a Python patch library instead of
+  `git apply` against a real local checkout — rejected for now; `git
+  apply` is more robust to whitespace/context drift than a hand-rolled
+  unified-diff parser, and the correlation step already guarantees a real
+  local checkout exists for the one repo this system watches.
+- Building CloudWatch/Azure Monitor adapters in this same pass — deferred.
+  They need live cloud credentials to test against, which isn't available
+  in this environment; the schema (`LogSource.source_type`,
+  `status="coming_soon"`) already anticipates them, so adding the adapter
+  code itself is a self-contained follow-up, not a schema change.
+
+Tradeoff / what breaks at scale: The GitHub integration operates on a
+single local git checkout (`DEMO_REPO_PATH`) and pushes/opens PRs
+sequentially — fine for one demo repo, but a real multi-repo product would
+need `Issue` to record which checkout (or a fresh clone per PR) it came
+from, and `open_pull_request` would need to not mutate shared local
+working-tree state (currently `git checkout -B` on the one shared
+checkout, which isn't safe under concurrent PR requests).
+
+Correction: an early version of the analytics feature compared
+`Issue.resolved_at` (set via `datetime.utcnow()`) against `Issue.first_seen`
+(sourced from the log event's own timestamp — the log source's local wall
+clock, per `FileTailAdapter`, not UTC). On this dev machine (IST, UTC+5:30)
+that produced a negative average-resolution-time. Fixed by using
+`datetime.now()` for `resolved_at` to match the same wall-clock convention
+as `first_seen`, since both events currently originate from the same
+machine in local dev. A real multi-timezone deployment would need log
+sources to report UTC timestamps at ingestion instead.
+
+Interview angle: "The dedup/fingerprint step exists because of an earlier,
+measured finding — the LLM call is the dominant cost. Grouping isn't just
+a UX nicety here; it's the direct lever for not paying for the same
+diagnosis twice."
