@@ -17,6 +17,24 @@ def _redis_reachable() -> bool:
 
 requires_redis = pytest.mark.skipif(not _redis_reachable(), reason="Redis not reachable")
 
+TEST_IPS = ["10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.4"]
+
+
+@pytest.fixture(autouse=True)
+def clean_rate_limit_keys():
+    """These tests use fixed IPs and share the same fixed-window key
+    (current time window) across runs — without this, a prior run's leftover
+    counters make later runs flaky/order-dependent within the same window."""
+    if not _redis_reachable():
+        yield
+        return
+    client = get_redis_client()
+    pattern = "ratelimit:ingest:*"
+    for key in client.keys(pattern):
+        if any(f":{ip}:" in key.decode() for ip in TEST_IPS):
+            client.delete(key)
+    yield
+
 
 def _fake_request(client_ip: str) -> Request:
     scope = {

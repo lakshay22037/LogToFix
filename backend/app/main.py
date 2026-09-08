@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 import app.env  # noqa: F401 — loads .env as a side effect
+from app.auth import CurrentUser, get_current_user
 from app.db import get_session
 from app.logging_config import configure_logging, correlation_id_var
 from app.models import FixSuggestionRecord, LogEventRecord
@@ -77,6 +78,7 @@ def list_errors(
     limit: int = 20,
     offset: int = 0,
     session: Session = Depends(get_session),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     limit = max(1, min(limit, 100))  # never an unbounded result set
     offset = max(0, offset)
@@ -109,7 +111,11 @@ def list_errors(
 
 
 @app.get("/errors/{error_id}", response_model=ErrorDetail)
-def get_error(error_id: UUID, session: Session = Depends(get_session)):
+def get_error(
+    error_id: UUID,
+    session: Session = Depends(get_session),
+    current_user: CurrentUser = Depends(get_current_user),
+):
     log_event: Optional[LogEventRecord] = (
         session.query(LogEventRecord).filter(LogEventRecord.id == error_id).first()
     )

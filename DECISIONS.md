@@ -97,6 +97,58 @@ know or care where a log actually came from."
 
 ---
 
+## 2026-09-08 Decision: Authentication — Supabase Auth (Google OAuth), local JWT verification
+
+Chose: Supabase Auth for login (Google OAuth provider), with the frontend
+using `@supabase/supabase-js` directly for the sign-in flow and the backend
+verifying the resulting JWT itself (HS256, against the project's shared
+JWT secret) rather than calling back to Supabase per request.
+
+Alternatives considered:
+- **Roll our own auth** (password hashing, session/JWT issuance,
+  Google OAuth handshake by hand) — rejected: reimplementing an OAuth
+  flow and credential storage is a well-known source of security bugs for
+  very little learning value here; the interesting engineering problem in
+  this project is the RAG/correlation pipeline, not auth plumbing.
+- **Auth0 / Clerk** — also viable managed options, rejected only because
+  Supabase was already the natural choice given Postgres+pgvector is
+  already the datastore, and Supabase's free tier covers this project's
+  scale without a second unrelated vendor account.
+- **Verify tokens via Supabase's API/JWKS endpoint on every request**
+  (network round-trip per request) — rejected in favor of local HS256
+  verification against the shared secret: no network call, no added
+  latency, and no new failure mode where the API depends on Supabase's
+  auth service being reachable just to serve a read request. This is the
+  same "verify locally, don't add a synchronous dependency on the hot
+  path" reasoning as everywhere else stateless/scalable was prioritized
+  in this project.
+Why we chose this: Google Sign-In needs almost zero backend code this way —
+Supabase handles the entire OAuth handshake and issues a standard JWT;
+`backend/app/auth.py` only needs to verify a signature and read claims.
+Tradeoff / what breaks at scale: the shared JWT secret must be kept out of
+version control and rotated if ever exposed (it's the single trust anchor
+for every verified request) — already handled by the existing `.env`
+convention, but worth calling out as higher-stakes than the other secrets
+in this project. Supabase also supports asymmetric (RS256/JWKS)
+verification as a newer alternative, which would remove the shared-secret
+risk entirely at the cost of a JWKS fetch/cache — not adopted here, noted
+as the natural next step if the shared secret ever became a real concern.
+Interview angle: "I picked local JWT verification specifically to keep the
+API stateless and avoid a synchronous dependency on Supabase's own uptime
+just to answer a read request — the tradeoff is that the shared secret
+becomes the single highest-value thing to protect in this codebase, and I
+can tell you exactly what I'd swap in (JWKS/RS256) if that tradeoff ever
+stopped being acceptable."
+
+Verified end-to-end (with a synthetic JWT, since completing a real Google
+OAuth handshake needs an interactive browser + a real Supabase project):
+`GET /errors` correctly returns 401 with no `Authorization` header, 401
+with a garbage token, and 200 with a validly-signed token — confirmed via
+both unit tests (`test_auth.py`, 7 cases including expiry and wrong
+audience) and a live HTTP call against a running server.
+
+---
+
 ## 2026-09-08 Decision: Frontend implementation — hand-rolled diff viewer, no CSS framework
 
 Chose: A minimal React + Vite app with a hand-written unified-diff renderer

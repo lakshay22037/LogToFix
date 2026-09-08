@@ -3,12 +3,23 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
+from app.auth import CurrentUser, get_current_user
 from app.db import SessionLocal
 from app.main import app
 from app.models import FixSuggestionRecord, LogEventRecord
 from tests.test_persistence import requires_postgres
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def authenticated():
+    """Overrides auth for every test in this file — these tests exercise
+    /errors endpoint behavior, not the auth layer itself (see
+    test_auth.py for that), so a fixed fake user keeps them focused."""
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(id="test-user", email="test@example.com")
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.fixture
@@ -91,3 +102,15 @@ def test_get_error_detail_404_for_unknown_id():
 def test_ingest_response_has_cors_header_for_allowed_origin():
     response = client.get("/health", headers={"Origin": "http://localhost:5173"})
     assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+
+@requires_postgres
+def test_errors_endpoints_require_auth():
+    # Remove the override just for these two assertions, so the real
+    # dependency (requiring a valid Authorization header) actually runs.
+    app.dependency_overrides.pop(get_current_user, None)
+    try:
+        assert client.get("/errors").status_code == 401
+        assert client.get("/errors/00000000-0000-0000-0000-000000000000").status_code == 401
+    finally:
+        app.dependency_overrides[get_current_user] = lambda: CurrentUser(id="test-user", email="test@example.com")

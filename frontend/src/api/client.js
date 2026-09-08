@@ -1,3 +1,5 @@
+import { supabase } from "./supabaseClient";
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 class ApiError extends Error {
@@ -8,9 +10,18 @@ class ApiError extends Error {
 }
 
 async function request(path) {
+  // Only reached from routes behind ProtectedRoute, which itself redirects
+  // when Supabase isn't configured — but guard here too rather than assume
+  // that always holds.
+  const session = supabase
+    ? (await supabase.auth.getSession()).data.session
+    : null;
+
   let response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`);
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+    });
   } catch {
     throw new ApiError("Could not reach the server. Is the backend running?", 0);
   }

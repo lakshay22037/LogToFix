@@ -9,4 +9,5 @@ sqlalchemy==2.0.35
 psycopg2-binary==2.9.9
 alembic==1.13.3
 pgvector==0.3.6
+PyJWT==2.9.0
 -e ../llm

@@ -22,6 +22,31 @@ seventh, optional one to generate traffic.
   `LLM_PROVIDER=fake` (the default) skips real API calls entirely — useful
   since there's no free tier for the Claude API; see DECISIONS.md. The same
   applies to `OPENAI_API_KEY`/`EMBEDDING_PROVIDER` for RAG embeddings.
+- A Supabase project, for login (see "Setting up Supabase Auth" below).
+  Without one configured, the dashboard shows a clear "sign-in isn't
+  configured yet" message rather than a broken login button.
+
+## Setting up Supabase Auth (Google sign-in)
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. In the dashboard: **Authentication → Providers → Google** — enable it.
+   You'll need a Google OAuth Client ID/Secret from the
+   [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+   (create an OAuth 2.0 Client ID, application type "Web application", and
+   add the redirect URL Supabase shows you on that same Providers page).
+3. In the dashboard: **Project Settings → API** — copy the **Project URL**
+   and **anon public** key into `frontend/.env`:
+   ```
+   VITE_SUPABASE_URL=https://<your-project>.supabase.co
+   VITE_SUPABASE_ANON_KEY=<anon key>
+   ```
+4. Same page, **JWT Settings** — copy the **JWT Secret** into the root
+   `.env`:
+   ```
+   SUPABASE_JWT_SECRET=<jwt secret>
+   ```
+5. Restart the frontend dev server and backend API if they were already
+   running, so the new env vars are picked up.
 
 ## 2. Terminal 1 — Redis + Postgres
 
@@ -102,10 +127,12 @@ npm install
 npm run dev
 ```
 
-Runs on `http://localhost:5173`. Lists detected errors and, clicking into
-one, shows the correlated commit, stack trace, and suggested fix (diff +
-confidence). `VITE_API_URL` (see `frontend/.env.example`) defaults to
-`http://localhost:8000` — set it if the backend runs elsewhere.
+Runs on `http://localhost:5173`. You'll be sent to `/login` first — sign in
+with Google (see "Setting up Supabase Auth" above). Once signed in, it
+lists detected errors and, clicking into one, shows the correlated commit,
+stack trace, and suggested fix (diff + confidence). `VITE_API_URL` (see
+`frontend/.env.example`) defaults to `http://localhost:8000` — set it if
+the backend runs elsewhere.
 
 ## 8. Terminal 7 (optional) — generate traffic
 
