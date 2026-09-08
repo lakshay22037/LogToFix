@@ -5,6 +5,8 @@ from llm_core.fix_suggester import suggest_fix
 
 from app.celery_app import celery_app
 from app.correlation import correlate_error_to_commit, read_code_context
+from app.db import SessionLocal
+from app.models import FixSuggestionRecord, LogEventRecord
 from app.schemas.log_event import NormalizedLogEvent
 
 logger = logging.getLogger(__name__)
@@ -32,16 +34,53 @@ def process_log_event(event_data: dict) -> None:
         correlation["line"],
     )
 
-    # Storage of results and RAG retrieval (next steps) are not wired in yet
-    # — this proves the correlation -> LLM leg of the pipeline in isolation.
     code_context = read_code_context(correlation["repo_root"], correlation["file"], correlation["line"])
     try:
         suggestion = suggest_fix(event.message, event.stack_trace, correlation, code_context)
     except LLMSuggestionError:
         logger.exception("Fix suggestion failed for event: %s", event.message)
+        _persist(event, correlation, suggestion=None)
         return
 
     logger.info(
         "Suggested fix (confidence %.2f): %s",
         suggestion.confidence, suggestion.explanation,
     )
+    _persist(event, correlation, suggestion)
+
+
+def _persist(event: NormalizedLogEvent, correlation: dict, suggestion) -> None:
+    session = SessionLocal()
+    try:
+        log_event_record = LogEventRecord(
+            timestamp=event.timestamp,
+            level=event.level.value,
+            service=event.service,
+            message=event.message,
+            stack_trace=event.stack_trace,
+            source_type=event.source_type.value,
+            raw=event.raw,
+            correlation_id=event.correlation_id,
+            commit_hash=correlation["commit"],
+            commit_author=correlation["author"],
+            commit_summary=correlation["summary"],
+            file_path=correlation["file"],
+            line_number=correlation["line"],
+        )
+        session.add(log_event_record)
+        session.flush()  # assigns log_event_record.id
+
+        if suggestion is not None:
+            session.add(FixSuggestionRecord(
+                log_event_id=log_event_record.id,
+                explanation=suggestion.explanation,
+                diff=suggestion.diff,
+                confidence=suggestion.confidence,
+            ))
+
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to persist log event / fix suggestion")
+    finally:
+        session.close()
