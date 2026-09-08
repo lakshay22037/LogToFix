@@ -149,6 +149,51 @@ audience) and a live HTTP call against a running server.
 
 ---
 
+## 2026-09-08 Correction: Authentication moved from shared-secret to JWKS verification
+
+The original auth entry above assumed Supabase issues HS256 JWTs signed
+with a static shared secret (`SUPABASE_JWT_SECRET`, Project Settings -> API
+-> JWT Settings -> "JWT Secret"). Setting this project up for real revealed
+that assumption was wrong for a newly-created Supabase project: the
+dashboard exposed a "Public key set (JWKS)" instead of a plain secret —
+new Supabase projects sign tokens with a rotating asymmetric ES256 key and
+publish the public half at `<project>/auth/v1/.well-known/jwks.json`, not
+a shared secret at all. (A "Legacy JWT Secret" does still exist for
+backward compatibility, and would have worked with the original
+implementation — but building against the scheme the project actually
+uses, not the deprecated fallback, is the right call for anything meant to
+keep working.)
+
+Changed `backend/app/auth.py` to verify via `jwt.PyJWKClient` against the
+public JWKS instead of a static secret — `SUPABASE_URL` replaces
+`SUPABASE_JWT_SECRET` in `.env`. This is arguably a better outcome than the
+original design: there's no shared secret to protect at all (only public
+keys are involved), and `PyJWKClient` caches keys internally, so this
+didn't reintroduce the "network call on every request" problem the
+original design was written to avoid.
+
+Also surfaced a second, unrelated mistake worth recording: I initially
+transcribed the project ref from a screenshot as `haujhvzktrnjihdkame`
+instead of the actual `haujhvzktrnjihdkhame` (one extra `h`) — a plausible-
+looking but wrong value that produced a clean `NXDOMAIN`, not an obviously
+broken one. Caught by verifying the JWKS URL actually resolved and
+returned real key material before trusting the configuration, rather than
+assuming a value copied from a screenshot was correct.
+
+Tests rewritten to sign/verify with a real generated ES256 (EC P-256)
+keypair via `cryptography`, monkeypatching a fake `PyJWKClient` instead of
+a shared secret. Re-verified live against the real Supabase project: the
+JWKS endpoint was fetched and returned a real key, and `GET /errors`
+correctly returned 401 for both a missing and a malformed token — the same
+verification the original entry described, now against the real scheme.
+Interview angle: "My first implementation was reasonable but wrong for
+this specific project, and I only found out because I insisted on testing
+against the real JWKS endpoint instead of trusting the plan — that's also
+how I caught a one-character typo in a project ref that would have failed
+silently as 'server unreachable' in production."
+
+---
+
 ## 2026-09-08 Decision: Frontend implementation — hand-rolled diff viewer, no CSS framework
 
 Chose: A minimal React + Vite app with a hand-written unified-diff renderer
