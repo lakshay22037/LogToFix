@@ -97,6 +97,44 @@ know or care where a log actually came from."
 
 ---
 
+## 2026-09-08 Decision: Rate limiting on ingestion — Redis fixed-window counter
+
+Chose: A hand-rolled fixed-window rate limiter (`app/rate_limit.py`) using
+Redis `INCR`/`EXPIRE` keyed by client IP and time window, applied to
+`POST /logs/ingest` as a FastAPI dependency.
+Alternatives considered:
+- **In-memory counter (e.g. a dict on the FastAPI process)** — rejected
+  because it violates the stateless-API standard: state wouldn't be shared
+  across horizontally scaled API instances, so a client could bypass the
+  limit just by landing on a different instance.
+- **A rate-limiting library (e.g. `slowapi`)** — rejected in favor of a
+  small hand-rolled version here specifically because our need (protect one
+  endpoint from bursts) is simple enough not to need a library's per-route
+  decorator configurability, and hand-rolling it means no unfamiliar
+  library behavior to verify — the whole implementation is ~20 lines,
+  reusing the Redis connection we already run.
+Why we chose this: Redis is already a required dependency (Celery broker),
+so this adds no new infrastructure — just a new use of it. Fixed-window
+counters are the simplest correct implementation for "cap requests per
+IP per time window."
+Tradeoff / what breaks at scale: Fixed windows allow up to 2x the stated
+limit in a burst that straddles a window boundary (e.g. a burst at 0:59 and
+another at 1:01 could both hit the limit in the same ~2 seconds). A sliding
+window or token bucket would be more precise; not worth the extra
+complexity at this project's traffic scale, but the first thing to swap in
+under real abuse-prevention requirements.
+Interview angle: "I picked the simplest correct rate limiter — a Redis
+fixed-window counter — over a library, specifically because I could verify
+every line of it myself. I know its precise weakness (boundary bursts) and
+what I'd replace it with (a sliding window) if that mattered here."
+
+Verified via real HTTP requests against a running server: with the limit
+set to 5/window, requests 1-5 returned 202 and requests 6+ returned 429,
+confirming the dependency actually gates the endpoint end-to-end, not just
+in isolation.
+
+---
+
 ## 2026-09-08 Finding: Breadth — git-blame correlation for non-exception bugs
 
 To bring the race-condition and N+1 seeded bugs into the pipeline (they
