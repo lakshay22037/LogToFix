@@ -1,13 +1,15 @@
 import { Link } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
+import AmbientBackground from "./AmbientBackground";
 import Logo from "./Logo";
 
 export default function AppShell({ children }) {
   const { session, signOut } = useAuth();
 
   return (
-    <div className="min-h-screen bg-canvas text-white">
+    <div className="relative min-h-screen bg-canvas text-white">
+      <AmbientBackground />
       <header className="sticky top-0 z-40 border-b border-border-subtle bg-canvas/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link to="/dashboard">
@@ -25,7 +27,7 @@ export default function AppShell({ children }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+      <main className="relative z-10 mx-auto max-w-6xl px-6 py-8">{children}</main>
     </div>
   );
 }

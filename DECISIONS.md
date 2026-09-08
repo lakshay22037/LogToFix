@@ -149,6 +149,38 @@ audience) and a live HTTP call against a running server.
 
 ---
 
+## 2026-09-08 Finding: The landing/login pages looked "totally blank" — a real z-index bug, not just sparse design
+
+After shipping the Tailwind redesign, real user testing (not my own
+screenshots, which happened to be taken at a moment that masked it) showed
+the login and landing pages rendering as a near-empty black screen at
+desktop width. Root cause: `AmbientBackground`'s decorative glow layer used
+`position: absolute` + `-z-10` inside a parent with `position: relative`
+but no explicit `z-index` — per CSS stacking rules, a `position: relative`
+element without a non-auto `z-index` does **not** establish a new stacking
+context, so the negative-z-index child ended up resolved against the
+*root* stacking context instead of the local one, and effectively never
+painted above the page's own opaque background in practice. The fix:
+stopped relying on negative z-index at all — the background layer uses
+`z-0` and every real content wrapper (`LandingPage`, `LoginPage`,
+`AppShell`) explicitly uses `relative z-10`, so layering is decided by a
+direct, unambiguous z-index comparison instead of stacking-context
+inference.
+Interview angle: "Negative z-index without a properly established stacking
+context is a classic CSS footgun — it can silently fail to paint at all
+depending on ancestor properties, and the fix isn't 'add more negative
+z-index', it's making every layer's stacking explicit so there's no
+ambiguity to get wrong."
+
+Also added, in the same pass: a genuine animated product demo (`DemoPreview`)
+on the landing page — a self-contained, timer-driven mockup cycling through
+watching → error detected → correlating to a commit → suggested fix, using
+real content from the actual demo repo (not generic placeholder text) —
+replacing a static feature-card-only layout with something that actually
+shows the product working.
+
+---
+
 ## 2026-09-08 Decision: Multi-project data model — Projects → Log Sources → Errors
 
 Chose: A `Project` (owned by a Supabase user id) has many `LogSource`s

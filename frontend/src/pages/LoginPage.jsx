@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 
+import AmbientBackground from "../components/AmbientBackground";
 import Logo from "../components/Logo";
 import SupabaseNotConfigured from "../components/SupabaseNotConfigured";
 import { useAuth } from "../context/AuthContext";
@@ -9,8 +10,10 @@ export default function LoginPage() {
   const { status, signInWithGoogle } = useAuth();
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-canvas px-4 text-white">
-      <Link to="/" className="mb-10">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-canvas px-4 text-white">
+      <AmbientBackground />
+
+      <Link to="/" className="relative z-10 mb-10">
         <Logo />
       </Link>
 
@@ -18,7 +21,7 @@ export default function LoginPage() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="w-full max-w-sm rounded-2xl border border-border bg-surface p-8 text-center shadow-xl"
+        className="relative z-10 w-full max-w-sm rounded-2xl border border-border bg-surface p-8 text-center shadow-xl"
       >
         <h1 className="text-lg font-semibold text-white">Welcome back</h1>
         <p className="mt-1.5 text-sm text-zinc-400">Sign in to view detected errors and suggested fixes.</p>
