@@ -149,6 +149,100 @@ audience) and a live HTTP call against a running server.
 
 ---
 
+## 2026-09-08 Decision: Multi-project data model — Projects → Log Sources → Errors
+
+Chose: A `Project` (owned by a Supabase user id) has many `LogSource`s
+(one per monitored log origin — file, CloudWatch, Azure Monitor); every
+`LogEventRecord` belongs to a `LogSource` via `log_source_id`. All
+`/errors` endpoints moved under `/projects/{project_id}/errors` and are
+ownership-checked against the authenticated user before returning anything.
+
+Alternatives considered:
+- **Single implicit global project** (what existed before — one shared
+  error list, no ownership) — rejected once real auth existed: with
+  multiple users able to sign in, a shared global list would mean every
+  signed-in user sees every other user's errors, which defeats the purpose
+  of having auth at all.
+- **Errors reference Project directly, skip the LogSource layer** —
+  rejected: "which specific source did this come from" is real,
+  interview-relevant information (a project can have prod + staging
+  sources, or multiple services), and it's what makes the AWS/Azure
+  "coming soon" source-type modeling in the same migration meaningful
+  rather than decorative.
+Why we chose this: mirrors how real observability products are structured
+(e.g., a Sentry/Datadog "project" containing multiple log/error sources),
+and reuses the canonical-schema/adapter design from Phase 1 — adding a real
+CloudWatch or Azure Monitor adapter later is "write the adapter," not
+"redesign the data model."
+
+**Cloud log sources (AWS CloudWatch / Azure Monitor) are modeled and
+configurable now, but marked `status="coming_soon"`, not actually
+polled** — chosen deliberately over two other options: (a) hiding cloud
+sources from the UI entirely until adapters exist (would have understated
+the architecture that's actually in place), or (b) faking full
+functionality (would misrepresent what's real). A specific security
+reason drove the config form design too: cloud source config forms
+collect only non-sensitive fields (region, log group, workspace ID) —
+**no AWS/Azure credentials are collected**, since the `config` JSONB
+column has no encryption-at-rest and storing real secret keys in it
+un-encrypted, for an integration that doesn't even use them yet, would be
+a real security anti-pattern, not a hypothetical one.
+Interview angle: "The cloud source types aren't a mockup — they're a real
+row in a real table with a real status field, ready for an adapter to be
+plugged in. But I deliberately didn't collect real AWS credentials for
+them, because our config storage has no encryption layer — collecting
+secrets we can't yet protect properly would be worse than not collecting
+them at all."
+
+Verified: 53 backend tests pass, including new coverage for project/source
+CRUD, ownership enforcement (one user can't see or 404-probes into another
+user's project), and the coming-soon-vs-active status logic.
+
+---
+
+## 2026-09-08 Decision: Frontend rebuilt on Tailwind CSS v4 + Framer Motion
+
+Chose: Migrated the whole frontend from hand-written CSS to Tailwind CSS v4
+(CSS-first `@theme` config, no separate `tailwind.config.js`) plus Framer
+Motion for animation, replacing the earlier CSS-custom-properties approach
+from the first frontend build.
+Alternatives considered:
+- **Keep hand-written CSS, add more of it** — rejected: the UI surface
+  grew significantly this pass (landing page, modals, live-updating feed,
+  multi-page app shell) and hand-writing that much CSS by hand would have
+  been slower and less consistent than a utility-first system with a
+  proper design-token scale.
+- **Hand-rolled CSS transitions instead of Framer Motion** (what the
+  original DiffViewer/badges used) — rejected specifically for this pass
+  because the ask included genuine interaction-driven animation (modal
+  enter/exit, live feed items animating in) where Framer Motion's
+  declarative `initial`/`animate`/`exit` API is meaningfully less code and
+  less error-prone than hand-rolled keyframe timing — the same "don't
+  hand-roll what a well-scoped library does better" reasoning that led to
+  using react-router earlier, just for animation instead of routing.
+Why we chose this: Tailwind v4's `@theme` block still keeps every design
+token (colors, fonts, animation curves) in one readable place — same
+principle as the earlier CSS-custom-properties system, just also
+generating utility classes instead of only custom component classes.
+
+**A real bug found via testing, not assumed away**: the landing page's
+feature cards originally used Framer Motion's `whileInView` (scroll-
+triggered reveal). A full-page automated screenshot showed 3 of 4 cards
+never became visible — they were still at `opacity: 0`, because nothing
+had scrolled them into view to fire the IntersectionObserver. This wasn't
+just a testing artifact: any real-world way of viewing all page content in
+one shot (aggressive lazy-load prefetch scenarios, `prefers-reduced-motion`
+tooling) would hit the same failure. Fixed by switching those cards to
+mount-triggered `animate` instead of `whileInView` — content on a page
+this short doesn't need scroll-gating, and doing so imposed a needless
+failure mode on core content.
+Interview angle: "Scroll-triggered animation looks better in a demo but
+adds a real failure mode — content that depends on being scrolled into
+view can silently never render. I found that by screenshotting the full
+page automatically instead of just eyeballing what's on screen at 1440x900."
+
+---
+
 ## 2026-09-08 Correction: Authentication moved from shared-secret to JWKS verification
 
 The original auth entry above assumed Supabase issues HS256 JWTs signed

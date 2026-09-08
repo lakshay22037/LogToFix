@@ -40,10 +40,11 @@ seventh, optional one to generate traffic.
    VITE_SUPABASE_URL=https://<your-project>.supabase.co
    VITE_SUPABASE_ANON_KEY=<anon key>
    ```
-4. Same page, **JWT Settings** — copy the **JWT Secret** into the root
-   `.env`:
+4. Also put the **Project URL** into the root `.env` (the backend verifies
+   login tokens against your project's public JWKS, fetched from this URL
+   — no secret needed for this):
    ```
-   SUPABASE_JWT_SECRET=<jwt secret>
+   SUPABASE_URL=https://<your-project>.supabase.co
    ```
 5. Restart the frontend dev server and backend API if they were already
    running, so the new env vars are picked up.
@@ -107,19 +108,7 @@ Picks up tasks enqueued by the ingestion API: correlates the error to a
 commit via git blame, asks the LLM for a fix suggestion, and persists both
 to Postgres. Leave this running.
 
-## 6. Terminal 5 — the log shipper (tails the demo app's logs, forwards to ingestion)
-
-```bash
-cd backend
-source .venv/bin/activate   # same venv as step 4 (macOS/Linux); Windows: .venv\Scripts\Activate.ps1
-
-python3 -m app.shipper ../data/demo-repo/logs/app.log
-```
-
-This process watches the log file and POSTs each new parsed event to
-`http://localhost:8000/logs/ingest`. Leave this running.
-
-## 7. Terminal 6 — the frontend dashboard
+## 6. Terminal 5 — the frontend dashboard
 
 ```bash
 cd frontend
@@ -128,11 +117,25 @@ npm run dev
 ```
 
 Runs on `http://localhost:5173`. You'll be sent to `/login` first — sign in
-with Google (see "Setting up Supabase Auth" above). Once signed in, it
-lists detected errors and, clicking into one, shows the correlated commit,
-stack trace, and suggested fix (diff + confidence). `VITE_API_URL` (see
-`frontend/.env.example`) defaults to `http://localhost:8000` — set it if
-the backend runs elsewhere.
+with Google (see "Setting up Supabase Auth" above). Once signed in:
+
+1. Create a project (e.g. "demo-repo").
+2. Inside it, **+ Add source** → type **File**, name it anything, and note
+   the source's id shown after creation (visible in the sources list, or
+   via `GET /projects/{id}/sources`).
+
+## 7. Terminal 6 — the log shipper (tails the demo app's logs, forwards to ingestion)
+
+```bash
+cd backend
+source .venv/bin/activate   # same venv as step 4 (macOS/Linux); Windows: .venv\Scripts\Activate.ps1
+
+python3 -m app.shipper ../data/demo-repo/logs/app.log --source-id <the log source id from step 6>
+```
+
+This process watches the log file and POSTs each new parsed event to
+`http://localhost:8000/logs/ingest`, tagged with that source id so it shows
+up under the right project. Leave this running.
 
 ## 8. Terminal 7 (optional) — generate traffic
 
@@ -149,15 +152,16 @@ python traffic_generator.py
 
 - Terminal 2 (demo app) logs each request, including full tracebacks for the
   5 seeded bugs (see `data/demo-repo/README.md` for what they are).
-- Terminal 5 (shipper) picks up new log lines as they're written.
+- Terminal 6 (shipper) picks up new log lines as they're written.
 - Terminal 3 (backend) returns `202 Accepted` immediately for each ingested
   event — it doesn't wait for processing.
 - Terminal 4 (Celery worker) logs `Processing event`, `Correlated to commit`,
   `Retrieved N similar past fix(es)`, and (if `LLM_PROVIDER=claude`)
   `Suggested fix` for each task it picks up.
 - Every processed error and its fix suggestion are persisted to Postgres and
-  show up in the dashboard (Terminal 6, `http://localhost:5173`) — or check
-  directly with `psql $DATABASE_URL -c "select * from log_events;"`.
+  show up under the project you created in the dashboard (Terminal 5,
+  `http://localhost:5173`) — or check directly with
+  `psql $DATABASE_URL -c "select * from log_events;"`.
 
 ## Stopping everything
 

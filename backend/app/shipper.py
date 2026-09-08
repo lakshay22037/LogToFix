@@ -1,4 +1,5 @@
 import time
+from typing import Optional
 
 import requests
 
@@ -9,11 +10,17 @@ INGEST_URL = "http://localhost:8000/logs/ingest"
 POLL_INTERVAL_SECONDS = 1.0
 
 
-def tail_and_ship(file_path: str, adapter: LogSourceAdapter, ingest_url: str = INGEST_URL) -> None:
+def tail_and_ship(
+    file_path: str,
+    adapter: LogSourceAdapter,
+    ingest_url: str = INGEST_URL,
+    source_id: Optional[str] = None,
+) -> None:
     """Watches a log file for new lines and forwards each parsed event to the
     ingestion API — the standalone "log shipper" role described in
     DECISIONS.md, decoupled from both the app producing logs and the API
-    consuming them."""
+    consuming them. source_id ties every shipped event to a LogSource
+    record so it shows up under the right project."""
     buffer: list[str] = []
 
     def flush():
@@ -23,8 +30,11 @@ def tail_and_ship(file_path: str, adapter: LogSourceAdapter, ingest_url: str = I
         buffer.clear()
         if event is None:
             return
+        payload = event.model_dump(mode="json")
+        if source_id:
+            payload["source_id"] = source_id
         try:
-            requests.post(ingest_url, json=event.model_dump(mode="json"), timeout=5)
+            requests.post(ingest_url, json=payload, timeout=5)
         except requests.exceptions.RequestException as exc:
             print(f"Failed to ship event to {ingest_url}: {exc}")
 
@@ -46,7 +56,12 @@ def tail_and_ship(file_path: str, adapter: LogSourceAdapter, ingest_url: str = I
 
 
 if __name__ == "__main__":
-    import sys
+    import argparse
 
-    log_file = sys.argv[1] if len(sys.argv) > 1 else "../data/demo-repo/logs/app.log"
-    tail_and_ship(log_file, FileTailAdapter())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("log_file", nargs="?", default="../data/demo-repo/logs/app.log")
+    parser.add_argument("--source-id", default=None, help="LogSource id to tag shipped events with")
+    parser.add_argument("--ingest-url", default=INGEST_URL)
+    args = parser.parse_args()
+
+    tail_and_ship(args.log_file, FileTailAdapter(), ingest_url=args.ingest_url, source_id=args.source_id)

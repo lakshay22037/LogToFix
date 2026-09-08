@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -34,3 +35,7 @@ class NormalizedLogEvent(BaseModel):
     source_type: SourceType
     raw: str
     correlation_id: Optional[str] = Field(default=None)
+    # Which LogSource this event came from — set by the shipper/ingestion
+    # client. None is allowed for backward-compat / ad-hoc testing; such
+    # events won't show up under any project's scoped error list.
+    source_id: Optional[UUID] = Field(default=None)

@@ -79,6 +79,7 @@ def _persist(event: NormalizedLogEvent, correlation: dict, suggestion) -> None:
     session = SessionLocal()
     try:
         log_event_record = LogEventRecord(
+            log_source_id=event.source_id,
             timestamp=event.timestamp,
             level=event.level.value,
             service=event.service,

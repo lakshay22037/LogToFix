@@ -2,19 +2,23 @@ export default function DiffViewer({ diff }) {
   const lines = diff.split("\n");
 
   return (
-    <pre className="diff-viewer">
+    <div className="overflow-x-auto rounded-lg border border-border bg-black/40 font-mono text-[13px] leading-relaxed">
       {lines.map((line, i) => {
-        let kind = "context";
-        if (line.startsWith("+") && !line.startsWith("+++")) kind = "add";
-        else if (line.startsWith("-") && !line.startsWith("---")) kind = "remove";
-        else if (line.startsWith("@@")) kind = "hunk";
+        let className = "px-4 text-zinc-400";
+        if (line.startsWith("+") && !line.startsWith("+++")) {
+          className = "bg-good-500/10 px-4 text-good-400";
+        } else if (line.startsWith("-") && !line.startsWith("---")) {
+          className = "bg-bad-500/10 px-4 text-bad-400";
+        } else if (line.startsWith("@@")) {
+          className = "px-4 text-brand-400";
+        }
 
         return (
-          <div key={i} className={`diff-line diff-line--${kind}`}>
+          <div key={i} className={`whitespace-pre ${className}`}>
             {line || " "}
           </div>
         );
       })}
-    </pre>
+    </div>
   );
 }
