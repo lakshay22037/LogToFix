@@ -1,0 +1,17 @@
+[
+  {"query": "separability_matrix gives wrong results when CompoundModels are nested inside each other", "expected_source": "swebench-lite:astropy__astropy-12907"},
+  {"query": "RestructuredText output writer doesn't support writing header rows", "expected_source": "swebench-lite:astropy__astropy-14182"},
+  {"query": "QDP file reader breaks when commands are written in lowercase instead of uppercase", "expected_source": "swebench-lite:astropy__astropy-14365"},
+  {"query": "NDDataRef arithmetic fails when only one of the two operands has a mask defined", "expected_source": "swebench-lite:astropy__astropy-14995"},
+  {"query": "FITS record handling has a bug related to parsing exponent characters in D-format floats", "expected_source": "swebench-lite:astropy__astropy-6938"},
+  {"query": "Passing an empty array into a WCS coordinate transformation raises an error instead of returning empty", "expected_source": "swebench-lite:astropy__astropy-7746"},
+  {"query": "Uploaded files get overly permissive default file permissions, should default to 0644", "expected_source": "swebench-lite:django__django-10914"},
+  {"query": "FilePathField should support a callable for its path argument, not just a static string", "expected_source": "swebench-lite:django__django-10924"},
+  {"query": "Query compiler incorrectly strips an ORDER BY clause when it's written as a multi-line raw SQL expression", "expected_source": "swebench-lite:django__django-11001"},
+  {"query": "sqlmigrate command always wraps SQL output in BEGIN/COMMIT even for databases without transactional DDL support", "expected_source": "swebench-lite:django__django-11039"},
+  {"query": "Error message for invalid DurationField values shows the wrong expected format", "expected_source": "swebench-lite:django__django-11049"},
+  {"query": "Username validation regex incorrectly allows a trailing newline character", "expected_source": "swebench-lite:django__django-11099"},
+  {"query": "HttpResponse fails to accept memoryview objects as content", "expected_source": "swebench-lite:django__django-11133"},
+  {"query": "Deleting a model instance with no related objects doesn't reset the primary key attribute afterward", "expected_source": "swebench-lite:django__django-11179"},
+  {"query": "Http404 raised inside a URL path converter doesn't show Django's debug error page when DEBUG is on", "expected_source": "swebench-lite:django__django-11620"}
+]

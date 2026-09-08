@@ -97,6 +97,46 @@ know or care where a log actually came from."
 
 ---
 
+## 2026-09-08 Finding: Measured RAG retrieval quality — labeled eval set
+
+Built `data/rag_eval_set.json`: 15 hand-written paraphrases of real seeded
+SWE-bench bugs (e.g. "sqlmigrate command always wraps SQL output in BEGIN/
+COMMIT even for databases without transactional DDL support" for
+`django-11039`), each labeled with the source it should retrieve. Paraphrased
+rather than copied verbatim, so the eval measures genuine semantic
+retrieval, not exact-text lookup. `backend/scripts/eval_retrieval.py` runs
+every case through the real embedding + retrieval pipeline and reports
+Hits@1 / Hits@3 / Hits@k / MRR.
+
+Measured result (OpenAI `text-embedding-3-small`, 25-example corpus,
+top_k=5): **Hits@1 = 100%, Hits@3 = 100%, MRR = 1.000** — every single
+paraphrase retrieved its true match as the #1 result.
+
+Why this is a real result and not just a vanity number: earlier in this
+same session, a test-harness bug (env vars not loading in a standalone
+script — see the ".env loading" fix) produced a misleadingly bad ranking
+(true match 19th of 25) purely from comparing a fake query vector against
+real corpus vectors. Once fixed, both the earlier spot-checks and now this
+full labeled eval independently confirm retrieval is genuinely strong —
+this wasn't cherry-picked after the fact.
+
+Honest caveat — what this eval does *not* yet prove: at only 25 corpus
+examples covering clearly distinct bugs, and with paraphrases that retain
+distinctive technical vocabulary from the original (`separability_matrix`,
+`sqlmigrate`, `FilePathField`, ...), there's very little competition for the
+top spot. A 100% score here is a real, measured floor — not evidence that
+retrieval would stay this strong with (a) a much larger, more topically
+overlapping corpus, (b) near-duplicate bugs genuinely competing for rank 1,
+or (c) queries using different vocabulary than the original report (e.g. an
+end-user's plain-English error description vs. a maintainer's technical
+issue text).
+Interview angle: "I don't just report a retrieval eval score — I can tell
+you exactly what it does and doesn't prove, and what I'd need to add
+(harder negatives, a bigger corpus, vocabulary-mismatched queries) to trust
+it at production scale."
+
+---
+
 ## 2026-09-08 Decision: Embedding model for RAG — OpenAI text-embedding-3-small
 
 Chose: OpenAI's `text-embedding-3-small` (1536 dimensions) to embed bug
