@@ -97,6 +97,61 @@ know or care where a log actually came from."
 
 ---
 
+## 2026-09-08 Finding: Load testing — the real bottleneck is the LLM API, not our code
+
+Ran `backend/locustfile.py` (Locust) against `POST /logs/ingest` in three
+stages, each correcting a flaw in the previous one — kept here because the
+mistakes are as instructive as the final numbers.
+
+**Stage 1 — default rate limit, single-IP load:** 4469 requests, 97.76%
+returned `429`. All synthetic load comes from one IP, so it immediately hit
+the 100 req/60s-per-IP cap (see the rate-limiting decision) — a real,
+expected interaction, not a flaw. Real distributed traffic wouldn't behave
+this way; single-IP load testing needs the limit raised to measure past it.
+
+**Stage 2 — rate limit raised, but events had no `stack_trace`:** 5109
+requests, 0 failures, ~343 req/s, 2ms median latency, queue drained
+instantly. Looked great — until checking the Celery queue depth showed
+`0` immediately after, meaning `process_log_event`'s early-exit path
+(`if not event.stack_trace: return`) was firing for every event. This
+wasn't testing the pipeline at all, just the cheapest possible no-op path.
+Fixed by giving every load-test event a real stack trace pointing to an
+actual committed line in `data/demo-repo/app.py`, so correlation, RAG, and
+LLM all genuinely execute per event.
+
+**Stage 3 — full pipeline, `LLM_PROVIDER=fake`/`EMBEDDING_PROVIDER=fake`:**
+Ingestion API: ~333 req/s, 0 failures, 4-5ms median — confirms the
+async enqueue-and-return design holds up; the API itself is never the
+bottleneck. But the Celery queue backed up to 3554 tasks during a 15s
+burst and took **26 seconds to drain with 4 workers** — measured real
+worker throughput of **~137 tasks/sec** doing genuine work (git-blame
+subprocess call, fake embedding, real Postgres write) with no external API
+in the loop.
+
+**Stage 4 — full pipeline, real Claude + OpenAI:** Measured drain rate
+over a 30s sampled window (not a full drain, to avoid burning API cost
+unnecessarily) — **20 tasks in 30s = ~0.67 tasks/sec**, ~205x slower than
+Stage 3. With 4 concurrent workers, that's ~6 seconds average per task,
+consistent with real LLM API round-trip latency observed throughout this
+project. The remaining queued tasks were purged (`redis-cli del celery`)
+rather than left to drain, since letting ~400 more real Claude/OpenAI
+calls fire just to watch a number decrease isn't worth the cost.
+
+**Conclusion:** the bottleneck is unambiguously the external LLM API call,
+not our own code — worker throughput is ~200x higher without it. This
+directly motivates whatever comes next for real scale: batching, a
+worker pool sized for I/O-wait (not CPU), or a queue-depth-based alert
+rather than trying to optimize our own request-handling code, which is
+already not the constraint.
+Interview angle: "My first load test looked perfect — 0 failures, 343 req/s
+— until I checked *what* was actually being tested and found it was
+hitting a no-op early-exit path. The real numbers only came out once I
+fixed that, and they told a completely different story: our code is fast,
+the LLM API is 200x slower, and no amount of optimizing our own request
+handling would move that needle."
+
+---
+
 ## 2026-09-08 Finding: Security review pass
 
 A systematic pass over the codebase against ENGINEERING_STANDARDS.md §4,
