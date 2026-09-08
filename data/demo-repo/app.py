@@ -49,30 +49,21 @@ def seed_db():
 seed_db()
 
 
-# --- Bug 1: SQL injection (orders) ---
-# Query is built with string formatting instead of parameterized binding.
-# A malformed order_id (e.g. containing a quote) breaks the query and can be
-# used to manipulate it.
+# --- Orders ---
 log_orders = logging.getLogger("orders")
 
 
-@app.get("/orders/<order_id>")
+@app.get("/orders/<int:order_id>")
 def get_order(order_id):
     conn = get_db()
-    query = f"SELECT * FROM orders WHERE id = {order_id}"
-    try:
-        row = conn.execute(query).fetchone()
-    except sqlite3.OperationalError:
-        log_orders.error("Failed to fetch order %s", order_id, exc_info=True)
-        return jsonify({"error": "invalid order id"}), 400
-    finally:
-        conn.close()
+    row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    conn.close()
     if row is None:
         return jsonify({"error": "not found"}), 404
     return jsonify(dict(row))
 
 
-# --- Bug 2: missing input validation (users) ---
+# --- Users ---
 log_users = logging.getLogger("users")
 _users = []
 
@@ -80,16 +71,14 @@ _users = []
 @app.post("/users")
 def create_user():
     body = request.get_json(force=True, silent=True) or {}
-    try:
-        email = body["email"]
-    except KeyError:
-        log_users.error("Missing required field while creating user: %s", body, exc_info=True)
+    email = body.get("email")
+    if not email:
         return jsonify({"error": "email is required"}), 400
     _users.append({"email": email})
     return jsonify({"email": email}), 201
 
 
-# --- Bug 3: off-by-one pagination (items) ---
+# --- Items (paginated) ---
 log_items = logging.getLogger("items")
 PAGE_SIZE = 10
 
@@ -101,65 +90,58 @@ def get_items_page(page):
     conn.close()
     start = page * PAGE_SIZE
     end = start + PAGE_SIZE
-    try:
-        chunk = [dict(rows[i]) for i in range(start, end + 1)]
-    except IndexError:
-        log_items.error("Pagination out of range for page %s (have %d items)", page, len(rows), exc_info=True)
+    if start >= len(rows):
         return jsonify({"error": "page out of range"}), 400
+    chunk = [dict(row) for row in rows[start:end]]
     return jsonify(chunk)
 
 
-# --- Bug 4: race condition (counter) ---
+# --- Counter ---
 log_counter = logging.getLogger("counter")
 _counter = {"value": 0}
+_counter_lock = threading.Lock()
 
 
 @app.post("/counter/increment")
 def increment_counter():
-    current = _counter["value"]
-    current += 1
-    _counter["value"] = current
-    return jsonify({"value": _counter["value"]})
+    with _counter_lock:
+        _counter["value"] += 1
+        value = _counter["value"]
+    return jsonify({"value": value})
 
 
 @app.get("/counter/check")
-def check_counter(expected=None):
+def check_counter():
     expected = request.args.get("expected", type=int)
     actual = _counter["value"]
     if expected is not None and actual != expected:
         log_counter.error(
-            "Counter mismatch: expected %d, got %d (lost updates due to non-atomic increment)",
+            "Counter mismatch: expected %d, got %d",
             expected, actual,
         )
         return jsonify({"expected": expected, "actual": actual, "mismatch": True}), 200
     return jsonify({"actual": actual, "mismatch": False})
 
 
-# --- Bug 5: N+1 query pattern (reports) ---
+# --- Reports ---
 log_reports = logging.getLogger("reports")
-N_PLUS_ONE_THRESHOLD = 5
 
 
 @app.get("/reports/summary")
 def reports_summary():
     conn = get_db()
-    orders = conn.execute("SELECT * FROM orders").fetchall()
-    query_count = 0
-    summary = []
-    for order in orders:
-        # N+1: one query per order instead of a single join
-        item = conn.execute(
-            "SELECT * FROM items WHERE id = ?", (order["id"],)
-        ).fetchone()
-        query_count += 1
-        summary.append({"order_id": order["id"], "item": dict(item) if item else None})
+    rows = conn.execute(
+        "SELECT orders.id AS order_id, items.id AS item_id, items.name AS item_name "
+        "FROM orders LEFT JOIN items ON items.id = orders.id"
+    ).fetchall()
     conn.close()
-    if query_count > N_PLUS_ONE_THRESHOLD:
-        log_reports.warning(
-            "Slow query pattern detected in /reports/summary: %d individual queries "
-            "issued instead of a single join (N+1 query pattern)",
-            query_count,
-        )
+    summary = [
+        {
+            "order_id": row["order_id"],
+            "item": {"id": row["item_id"], "name": row["item_name"]} if row["item_id"] is not None else None,
+        }
+        for row in rows
+    ]
     return jsonify(summary)
 
 
