@@ -12,6 +12,7 @@ import requests
 
 from llm_core.embeddings import EmbeddingError, get_default_embedder
 
+import app.env  # noqa: F401 — loads .env as a side effect
 from app.db import SessionLocal
 from app.models import FixExample
 

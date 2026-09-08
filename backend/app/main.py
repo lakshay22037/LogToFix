@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+import app.env  # noqa: F401 — loads .env as a side effect
 from app.schemas.log_event import NormalizedLogEvent
 from app.tasks import process_log_event
 
