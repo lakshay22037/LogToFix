@@ -98,9 +98,11 @@ def get_items_page(page):
     conn.close()
     start = page * PAGE_SIZE
     end = start + PAGE_SIZE
-    if start >= len(rows):
+    try:
+        chunk = [dict(rows[i]) for i in range(start, end + 1)]
+    except IndexError:
+        log_items.error("Pagination out of range for page %s (have %d items)", page, len(rows), exc_info=True)
         return jsonify({"error": "page out of range"}), 400
-    chunk = [dict(row) for row in rows[start:end]]
     return jsonify(chunk)
 
 
