@@ -97,6 +97,50 @@ know or care where a log actually came from."
 
 ---
 
+## 2026-09-08 Finding: Breadth — git-blame correlation for non-exception bugs
+
+To bring the race-condition and N+1 seeded bugs into the pipeline (they
+don't raise exceptions, so had no stack trace for correlation to use), used
+Python's `logging` `stack_info=True` option to attach a captured stack even
+without a raised exception — no changes needed to the adapter/correlation
+regex, since the frame format (`File "...", line N, in func`) is identical.
+
+Result differs sharply by bug type:
+- **N+1 (reports)**: correlates correctly — blames `1e55abd`, the exact
+  commit that seeded the bug. The `log_reports.warning(...)` call lives
+  inside the same function, added in the same commit, as the N+1 query
+  loop it's warning about.
+- **Race condition (counter)**: correlates *technically correctly, but
+  practically uselessly* — blames `45305b4`, the very first walking-skeleton
+  commit, not `3237941` (the commit that actually removed the lock and
+  introduced the race). Root cause: `check_counter`'s mismatch-detection
+  code — where the error is logged — predates the race-condition bug
+  entirely; the bug was introduced by removing a lock inside a *different*
+  function (`increment_counter`). Git blame is correct that the log-call
+  line itself hasn't changed since the first commit — it just isn't the
+  line responsible for the bug.
+
+Why this isn't "fixed" further: the fundamental issue isn't the log
+statement's placement — a lost update is only observable by comparing
+against an external expected value, which structurally has to happen away
+from the faulty read-modify-write. Moving the log call doesn't change that.
+
+This is left as a documented, real limitation rather than special-cased
+away: git-blame-from-log-statement correlation only works when the
+detection site and the fault site are the same commit's work. For
+symptom-detected bugs (races, some invariant violations) where an
+older, unrelated piece of monitoring code happens to be what logs the
+symptom, this technique attributes blame to whoever last touched the
+*detection* code, which can be arbitrarily unrelated to the actual fault.
+Interview angle: "I found and kept a real failure case of my own
+correlation technique instead of hiding it — it's the same distinction
+production debugging always deals with: where an error is *observed* isn't
+always where it's *caused*. A more capable version of this tool would need
+execution tracing (which functions actually ran in the failing request),
+not just static blame on the log statement's line."
+
+---
+
 ## 2026-09-08 Finding: Measured RAG retrieval quality — labeled eval set
 
 Built `data/rag_eval_set.json`: 15 hand-written paraphrases of real seeded

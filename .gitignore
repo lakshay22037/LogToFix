@@ -19,6 +19,9 @@ dist/
 data/demo-repo/logs/*.log*
 data/demo-repo/demo.db
 
+# Redis local persistence dump (created by a local redis-server run)
+dump.rdb
+
 # Editor / OS
 .DS_Store
 .vscode/

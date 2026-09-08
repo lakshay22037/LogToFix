@@ -2,6 +2,7 @@ import logging
 import os
 import sqlite3
 import threading
+import time
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask, jsonify, request
@@ -35,7 +36,7 @@ def seed_db():
     if conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0:
         conn.executemany(
             "INSERT INTO orders (item, qty) VALUES (?, ?)",
-            [("widget", 3), ("gadget", 1), ("gizmo", 7)],
+            [(f"item-{i}", (i % 5) + 1) for i in range(12)],
         )
     if conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0:
         conn.executemany(
@@ -114,6 +115,7 @@ _counter = {"value": 0}
 @app.post("/counter/increment")
 def increment_counter():
     current = _counter["value"]
+    time.sleep(0.001)  # widens the read-modify-write window so the race reliably reproduces under concurrent load
     current += 1
     _counter["value"] = current
     return jsonify({"value": _counter["value"]})
@@ -124,9 +126,15 @@ def check_counter():
     expected = request.args.get("expected", type=int)
     actual = _counter["value"]
     if expected is not None and actual != expected:
+        # stack_info=True attaches a stack trace even without a raised
+        # exception, so this symptom (detected here, downstream of the
+        # actual race in increment_counter) still has *a* traceback for
+        # git-blame correlation to work with — see DECISIONS.md: "Breadth:
+        # correlating non-exception bugs" for why this points at the
+        # detection site, not the fault site.
         log_counter.error(
             "Counter mismatch: expected %d, got %d (lost updates due to non-atomic increment)",
-            expected, actual,
+            expected, actual, stack_info=True,
         )
         return jsonify({"expected": expected, "actual": actual, "mismatch": True}), 200
     return jsonify({"actual": actual, "mismatch": False})
@@ -155,7 +163,7 @@ def reports_summary():
         log_reports.warning(
             "Slow query pattern detected in /reports/summary: %d individual queries "
             "issued instead of a single join (N+1 query pattern)",
-            query_count,
+            query_count, stack_info=True,
         )
     return jsonify(summary)
 

@@ -1,3 +1,4 @@
+import ast
 import re
 import subprocess
 from pathlib import Path
@@ -84,10 +85,39 @@ def correlate_error_to_commit(stack_trace: str, path_filter: str = "demo-repo") 
     return result
 
 
-def read_code_context(repo_root: Path, file_path: str, line: int, context: int = 5) -> str:
-    """Returns numbered source lines around `line`, for grounding the LLM
-    prompt in the actual code rather than just the error message."""
-    lines = (Path(repo_root) / file_path).read_text().splitlines()
-    start = max(0, line - 1 - context)
-    end = min(len(lines), line + context)
-    return "\n".join(f"{i + 1}: {lines[i]}" for i in range(start, end))
+def _find_enclosing_function(tree: ast.AST, line: int) -> Optional[ast.AST]:
+    """Returns the innermost function/method containing `line`, so
+    read_code_context can show a whole function body instead of a fixed
+    line window that can miss the actually-relevant code (e.g. a loop
+    several lines above where an error/warning is logged)."""
+    best = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.lineno <= line <= node.end_lineno:
+                if best is None or (node.end_lineno - node.lineno) < (best.end_lineno - best.lineno):
+                    best = node
+    return best
+
+
+def read_code_context(repo_root: Path, file_path: str, line: int, fallback_context: int = 5) -> str:
+    """Returns the numbered source of the whole function enclosing `line`,
+    for grounding the LLM prompt in the actual code rather than just the
+    error message. Falls back to a fixed-size line window if the file
+    doesn't parse or `line` isn't inside a function (e.g. module-level
+    code)."""
+    source = (Path(repo_root) / file_path).read_text()
+    lines = source.splitlines()
+
+    try:
+        tree = ast.parse(source)
+        enclosing = _find_enclosing_function(tree, line)
+    except SyntaxError:
+        enclosing = None
+
+    if enclosing is not None:
+        start, end = enclosing.lineno, enclosing.end_lineno
+    else:
+        start = max(1, line - fallback_context)
+        end = min(len(lines), line + fallback_context)
+
+    return "\n".join(f"{i}: {lines[i - 1]}" for i in range(start, end + 1))
