@@ -53,11 +53,17 @@ seed_db()
 log_orders = logging.getLogger("orders")
 
 
-@app.get("/orders/<int:order_id>")
+@app.get("/orders/<order_id>")
 def get_order(order_id):
     conn = get_db()
-    row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-    conn.close()
+    query = f"SELECT * FROM orders WHERE id = {order_id}"
+    try:
+        row = conn.execute(query).fetchone()
+    except sqlite3.OperationalError:
+        log_orders.error("Failed to fetch order %s", order_id, exc_info=True)
+        return jsonify({"error": "invalid order id"}), 400
+    finally:
+        conn.close()
     if row is None:
         return jsonify({"error": "not found"}), 404
     return jsonify(dict(row))
