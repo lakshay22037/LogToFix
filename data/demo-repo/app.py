@@ -109,15 +109,14 @@ def get_items_page(page):
 # --- Counter ---
 log_counter = logging.getLogger("counter")
 _counter = {"value": 0}
-_counter_lock = threading.Lock()
 
 
 @app.post("/counter/increment")
 def increment_counter():
-    with _counter_lock:
-        _counter["value"] += 1
-        value = _counter["value"]
-    return jsonify({"value": value})
+    current = _counter["value"]
+    current += 1
+    _counter["value"] = current
+    return jsonify({"value": _counter["value"]})
 
 
 @app.get("/counter/check")
@@ -126,7 +125,7 @@ def check_counter():
     actual = _counter["value"]
     if expected is not None and actual != expected:
         log_counter.error(
-            "Counter mismatch: expected %d, got %d",
+            "Counter mismatch: expected %d, got %d (lost updates due to non-atomic increment)",
             expected, actual,
         )
         return jsonify({"expected": expected, "actual": actual, "mismatch": True}), 200
