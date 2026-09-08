@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 from llm_core.client import LLMSuggestionError
 from llm_core.embeddings import EmbeddingError, get_default_embedder
@@ -7,6 +8,7 @@ from llm_core.fix_suggester import suggest_fix
 from app.celery_app import celery_app
 from app.correlation import correlate_error_to_commit, read_code_context
 from app.db import SessionLocal
+from app.logging_config import correlation_id_var
 from app.models import FixSuggestionRecord, LogEventRecord
 from app.retrieval import retrieve_similar_fixes
 from app.schemas.log_event import NormalizedLogEvent
@@ -17,6 +19,18 @@ logger = logging.getLogger(__name__)
 @celery_app.task(name="process_log_event")
 def process_log_event(event_data: dict) -> None:
     event = NormalizedLogEvent(**event_data)
+
+    # Carries the id set by the API's request middleware (via
+    # event.correlation_id) into this process, so every log line below
+    # traces back to the same request — see logging_config.py.
+    token = correlation_id_var.set(event.correlation_id or str(uuid.uuid4()))
+    try:
+        _process(event)
+    finally:
+        correlation_id_var.reset(token)
+
+
+def _process(event: NormalizedLogEvent) -> None:
     logger.info("Processing event: %s [%s] %s", event.level, event.service, event.message)
 
     if not event.stack_trace:
