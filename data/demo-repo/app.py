@@ -134,23 +134,29 @@ def check_counter():
 
 # --- Reports ---
 log_reports = logging.getLogger("reports")
+N_PLUS_ONE_THRESHOLD = 5
 
 
 @app.get("/reports/summary")
 def reports_summary():
     conn = get_db()
-    rows = conn.execute(
-        "SELECT orders.id AS order_id, items.id AS item_id, items.name AS item_name "
-        "FROM orders LEFT JOIN items ON items.id = orders.id"
-    ).fetchall()
+    orders = conn.execute("SELECT * FROM orders").fetchall()
+    query_count = 0
+    summary = []
+    for order in orders:
+        # N+1: one query per order instead of a single join
+        item = conn.execute(
+            "SELECT * FROM items WHERE id = ?", (order["id"],)
+        ).fetchone()
+        query_count += 1
+        summary.append({"order_id": order["id"], "item": dict(item) if item else None})
     conn.close()
-    summary = [
-        {
-            "order_id": row["order_id"],
-            "item": {"id": row["item_id"], "name": row["item_name"]} if row["item_id"] is not None else None,
-        }
-        for row in rows
-    ]
+    if query_count > N_PLUS_ONE_THRESHOLD:
+        log_reports.warning(
+            "Slow query pattern detected in /reports/summary: %d individual queries "
+            "issued instead of a single join (N+1 query pattern)",
+            query_count,
+        )
     return jsonify(summary)
 
 
