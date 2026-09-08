@@ -1,12 +1,14 @@
 import logging
 
 from llm_core.client import LLMSuggestionError
+from llm_core.embeddings import EmbeddingError, get_default_embedder
 from llm_core.fix_suggester import suggest_fix
 
 from app.celery_app import celery_app
 from app.correlation import correlate_error_to_commit, read_code_context
 from app.db import SessionLocal
 from app.models import FixSuggestionRecord, LogEventRecord
+from app.retrieval import retrieve_similar_fixes
 from app.schemas.log_event import NormalizedLogEvent
 
 logger = logging.getLogger(__name__)
@@ -34,9 +36,19 @@ def process_log_event(event_data: dict) -> None:
         correlation["line"],
     )
 
+    retrieved_examples = []
+    try:
+        query_embedding = get_default_embedder().embed(event.message)
+        retrieved_examples = retrieve_similar_fixes(query_embedding, top_k=3)
+        logger.info("Retrieved %d similar past fix(es) from the RAG corpus", len(retrieved_examples))
+    except EmbeddingError:
+        # RAG is an enhancement, not a hard dependency — fall back to an
+        # ungrounded suggestion rather than failing the whole pipeline.
+        logger.exception("Embedding/retrieval failed; continuing without RAG context")
+
     code_context = read_code_context(correlation["repo_root"], correlation["file"], correlation["line"])
     try:
-        suggestion = suggest_fix(event.message, event.stack_trace, correlation, code_context)
+        suggestion = suggest_fix(event.message, event.stack_trace, correlation, code_context, retrieved_examples)
     except LLMSuggestionError:
         logger.exception("Fix suggestion failed for event: %s", event.message)
         _persist(event, correlation, suggestion=None)

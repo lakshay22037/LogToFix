@@ -97,6 +97,42 @@ know or care where a log actually came from."
 
 ---
 
+## 2026-09-08 Decision: Embedding model for RAG — OpenAI text-embedding-3-small
+
+Chose: OpenAI's `text-embedding-3-small` (1536 dimensions) to embed bug
+descriptions and past fixes for pgvector similarity search.
+Alternatives considered:
+- **Local, free (sentence-transformers `all-MiniLM-L6-v2`)** — zero cost, no
+  external dependency, works offline. Rejected as the choice here (though
+  it's a legitimate option) in favor of the higher retrieval quality a
+  hosted model gives, since retrieval quality is the thing Phase 2 is meant
+  to be measured and tuned on — a weaker embedding model makes that
+  measurement less meaningful.
+- **Voyage AI** (Anthropic's recommended embedding partner, code-optimized
+  models) — also viable, rejected only to avoid a third external provider
+  account/API key on top of Anthropic and OpenAI.
+Why we chose this: `text-embedding-3-small` is inexpensive (~$0.02/1M
+tokens), well-documented, and 1536 dimensions matches the `vector(1536)`
+column already migrated in `fix_examples` — no schema change needed.
+Tradeoff / what breaks at scale: introduces a second paid provider
+dependency (OpenAI) alongside Claude — acceptable here since embedding calls
+are one-time (seeding the corpus) plus one per incoming error, not a
+per-token-heavy workload like the LLM fix generation itself.
+Interview angle: "I picked a hosted embedding model specifically because
+Phase 2's goal is to measure and tune retrieval quality — using the
+free/local option would have made it harder to tell whether a bad result
+was the embedding model's fault or the chunking/threshold choices I was
+actually trying to evaluate."
+
+Implementation note: mirrors the LLM client's provider pattern exactly —
+`EMBEDDING_PROVIDER` env var defaults to `fake` (a deterministic hash-based
+embedder, zero cost, mechanism-only — not meaningful for similarity
+quality), set to `openai` for real embeddings. Same reasoning as the LLM
+FakeClient: no free tier for OpenAI's API either, so development shouldn't
+require spending real money by default.
+
+---
+
 ## 2026-09-08 Decision: Data sourcing strategy (three separate sources, not one)
 
 Chose: Use three data sources for three distinct purposes, not one unified
