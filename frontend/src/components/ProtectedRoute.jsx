@@ -23,7 +23,7 @@ export default function ProtectedRoute({ children }) {
   }
 
   if (status === "anonymous") {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return children;

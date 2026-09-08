@@ -12,7 +12,7 @@ export default function AppShell({ children }) {
       <AmbientBackground />
       <header className="sticky top-0 z-40 border-b border-border-subtle bg-canvas/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link to="/dashboard">
+          <Link to="/">
             <Logo />
           </Link>
           <div className="flex items-center gap-3">

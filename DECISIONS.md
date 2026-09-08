@@ -149,6 +149,33 @@ audience) and a live HTTP call against a running server.
 
 ---
 
+## 2026-09-08 Decision: One home route, not separate landing/login/dashboard pages
+
+Chose: Collapsed `LandingPage`, `LoginPage`, and `ProjectsListPage` (three
+separate routes: `/`, `/login`, `/dashboard`) into a single `HomePage` at
+`/` that branches on auth status — signed out, it shows the product pitch
+with an inline "Get started with Google" button (clicking it calls
+`signInWithOAuth` directly, no navigation); signed in, the same route shows
+the projects dashboard instead.
+Alternatives considered: the original three-route split - rejected once
+built and used for real: navigating to a separate `/login` page to sign in,
+then landing on yet another `/dashboard` route, is unnecessary route
+fragmentation for a single conceptual action ("get into the product"). A
+single adaptive home route is simpler to reason about and matches how the
+product is actually meant to be used.
+Also reduced the anonymous view's content to fit one viewport (`h-screen`,
+no page scroll) at both common desktop and mobile sizes: dropped the
+separate feature-card grid and footer, condensed four feature descriptions
+into a compact inline highlight strip, and moved the demo preview beside
+the headline (not below it) in a two-column layout on wider screens.
+Interview angle: "The first version had a technically-correct three-page
+funnel, but using it revealed that splitting 'see the pitch,' 'sign in,'
+and 'see your dashboard' across three routes added friction for zero
+benefit — collapsing them into one adaptive route was a real UX
+simplification, not just fewer files."
+
+---
+
 ## 2026-09-08 Finding: The landing/login pages looked "totally blank" — a real z-index bug, not just sparse design
 
 After shipping the Tailwind redesign, real user testing (not my own

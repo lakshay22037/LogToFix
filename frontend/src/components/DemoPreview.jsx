@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 const STEPS = ["watching", "error", "correlating", "fix"];
 const STEP_DURATIONS = { watching: 1800, error: 1600, correlating: 1600, fix: 3200 };
 
-export default function DemoPreview() {
+export default function DemoPreview({ compact = false }) {
   const [stepIndex, setStepIndex] = useState(0);
   const step = STEPS[stepIndex];
 
@@ -16,16 +16,24 @@ export default function DemoPreview() {
   }, [step]);
 
   return (
-    <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-border bg-surface/80 shadow-2xl shadow-black/40 backdrop-blur">
+    <div
+      className={`mx-auto w-full overflow-hidden rounded-2xl border border-border bg-surface/80 shadow-2xl shadow-black/40 backdrop-blur ${
+        compact ? "max-w-lg" : "max-w-2xl"
+      }`}
+    >
       {/* window chrome */}
-      <div className="flex items-center gap-1.5 border-b border-border-subtle bg-black/20 px-4 py-3">
+      <div className="flex items-center gap-1.5 border-b border-border-subtle bg-black/20 px-4 py-2.5">
         <span className="h-2.5 w-2.5 rounded-full bg-bad-500/70" />
         <span className="h-2.5 w-2.5 rounded-full bg-warn-500/70" />
         <span className="h-2.5 w-2.5 rounded-full bg-good-500/70" />
         <span className="ml-3 font-mono text-xs text-zinc-500">demo-repo — live monitoring</span>
       </div>
 
-      <div className="flex h-64 flex-col justify-center px-6 font-mono text-sm sm:h-72 sm:px-8">
+      <div
+        className={`flex flex-col justify-center px-5 font-mono text-xs sm:px-6 sm:text-sm ${
+          compact ? "h-44 sm:h-48" : "h-64 sm:h-72"
+        }`}
+      >
         <AnimatePresence mode="wait">
           {step === "watching" && (
             <motion.div

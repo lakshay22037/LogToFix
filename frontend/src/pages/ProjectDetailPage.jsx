@@ -54,7 +54,7 @@ export default function ProjectDetailPage() {
     <AppShell>
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <Link to="/dashboard" className="mb-1 inline-block text-xs text-zinc-500 transition hover:text-zinc-300">
+          <Link to="/" className="mb-1 inline-block text-xs text-zinc-500 transition hover:text-zinc-300">
             ← All projects
           </Link>
           <h1 className="text-2xl font-bold tracking-tight">{project?.name || "…"}</h1>

@@ -116,8 +116,10 @@ npm install
 npm run dev
 ```
 
-Runs on `http://localhost:5173`. You'll be sent to `/login` first — sign in
-with Google (see "Setting up Supabase Auth" above). Once signed in:
+Runs on `http://localhost:5173`. There's a single home page: signed out, it
+shows the product pitch with a "Get started with Google" button inline (no
+separate login page); once signed in, that same `/` shows your projects
+dashboard instead. Once signed in:
 
 1. Create a project (e.g. "demo-repo").
 2. Inside it, **+ Add source** → type **File**, name it anything, and note
