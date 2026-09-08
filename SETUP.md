@@ -1,24 +1,27 @@
 # Running Log-to-Fix locally
 
-Current state: walking-skeleton (Phase 1, done) — demo app → file-tail
-shipper → FastAPI ingestion → Celery/Redis queue → git-blame correlation →
-LLM fix suggestion → Postgres persistence. RAG and the frontend land in
-later steps of Phase 2. This covers running what exists today on any
-machine with Python 3.9+ and Docker.
+Current state: all phases through the frontend are done — demo app →
+file-tail shipper → FastAPI ingestion → Celery/Redis queue → git-blame
+correlation → RAG retrieval → LLM fix suggestion → Postgres persistence →
+React dashboard. This covers running the whole thing on any machine with
+Python 3.9+, Node 18+, and Docker.
 
-You'll run six processes, each in its own terminal, in this order.
+You'll run six processes, each in its own terminal, in this order — plus a
+seventh, optional one to generate traffic.
 
 ## 1. Prerequisites
 
 - Python 3.9 or newer (`python3 --version`)
 - `pip`
+- Node 18+ and `npm` (for the frontend)
 - Docker (for Redis + Postgres) — or local installs of both if you'd rather
   not use Docker
 - An Anthropic API key (get one at console.anthropic.com) — copy
   `.env.example` to `.env` at the repo root and set `ANTHROPIC_API_KEY` and
   `LLM_PROVIDER=claude`. `.env` is loaded automatically. Leaving
   `LLM_PROVIDER=fake` (the default) skips real API calls entirely — useful
-  since there's no free tier for the Claude API; see DECISIONS.md.
+  since there's no free tier for the Claude API; see DECISIONS.md. The same
+  applies to `OPENAI_API_KEY`/`EMBEDDING_PROVIDER` for RAG embeddings.
 
 ## 2. Terminal 1 — Redis + Postgres
 
@@ -91,10 +94,23 @@ python3 -m app.shipper ../data/demo-repo/logs/app.log
 This process watches the log file and POSTs each new parsed event to
 `http://localhost:8000/logs/ingest`. Leave this running.
 
-## 7. Generate traffic
+## 7. Terminal 6 — the frontend dashboard
 
-In a sixth terminal, hit the demo app's endpoints manually, or generate
-continuous traffic (including triggering the seeded bugs) automatically:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Runs on `http://localhost:5173`. Lists detected errors and, clicking into
+one, shows the correlated commit, stack trace, and suggested fix (diff +
+confidence). `VITE_API_URL` (see `frontend/.env.example`) defaults to
+`http://localhost:8000` — set it if the backend runs elsewhere.
+
+## 8. Terminal 7 (optional) — generate traffic
+
+Hit the demo app's endpoints manually, or generate continuous traffic
+(including triggering the seeded bugs) automatically:
 
 ```bash
 cd data/demo-repo
@@ -102,30 +118,26 @@ source .venv/bin/activate    # Windows: .venv\Scripts\Activate.ps1
 python traffic_generator.py
 ```
 
-## 8. What to expect
+## 9. What to expect
 
 - Terminal 2 (demo app) logs each request, including full tracebacks for the
   5 seeded bugs (see `data/demo-repo/README.md` for what they are).
-- Terminal 6 (shipper) picks up new log lines as they're written.
+- Terminal 5 (shipper) picks up new log lines as they're written.
 - Terminal 3 (backend) returns `202 Accepted` immediately for each ingested
   event — it doesn't wait for processing.
 - Terminal 4 (Celery worker) logs `Processing event`, `Correlated to commit`,
-  and (if `LLM_PROVIDER=claude`) `Suggested fix` for each task it picks up.
-- Every processed error and its fix suggestion are persisted to Postgres —
-  check with `psql $DATABASE_URL -c "select * from log_events;"`.
+  `Retrieved N similar past fix(es)`, and (if `LLM_PROVIDER=claude`)
+  `Suggested fix` for each task it picks up.
+- Every processed error and its fix suggestion are persisted to Postgres and
+  show up in the dashboard (Terminal 6, `http://localhost:5173`) — or check
+  directly with `psql $DATABASE_URL -c "select * from log_events;"`.
 
 ## Stopping everything
 
-`Ctrl+C` in each terminal (and `docker compose down` for Redis). Runtime
-artifacts (`.venv/`, `logs/app.log`, `demo.db`) are gitignored and safe to
-delete between runs if you want a clean slate:
+`Ctrl+C` in each terminal (and `docker compose down` for Redis/Postgres).
+Runtime artifacts (`.venv/`, `node_modules/`, `logs/app.log`, `demo.db`) are
+gitignored and safe to delete between runs if you want a clean slate:
 
 ```bash
-rm -rf backend/.venv data/demo-repo/.venv data/demo-repo/demo.db data/demo-repo/logs/app.log*
+rm -rf backend/.venv data/demo-repo/.venv data/demo-repo/demo.db data/demo-repo/logs/app.log* frontend/node_modules
 ```
-
----
-
-This file will be updated as later steps add the RAG pipeline and the
-frontend — at that point `docker compose up` plus one script will replace
-most of the manual steps above.

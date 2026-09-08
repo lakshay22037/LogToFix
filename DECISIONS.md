@@ -97,6 +97,43 @@ know or care where a log actually came from."
 
 ---
 
+## 2026-09-08 Decision: Frontend implementation — hand-rolled diff viewer, no CSS framework
+
+Chose: A minimal React + Vite app with a hand-written unified-diff renderer
+(`DiffViewer.jsx`, splits lines and colors by `+`/`-`/`@@` prefix) and
+hand-written CSS (no Tailwind/CSS framework, no diff-viewer library).
+Alternatives considered:
+- **A diff-viewer library** (e.g. `react-diff-viewer`) — rejected for this
+  simple case: we're rendering a unified diff string the LLM already
+  produced, not computing a diff ourselves: side-by-side rendering, syntax
+  highlighting, and other library features weren't worth a dependency for
+  ~20 lines of line-prefix-based coloring.
+- **A CSS framework** — rejected the same way as the diff library: the UI
+  surface (a list page and a detail page) is small enough that hand-written
+  CSS with CSS custom properties (for light/dark theming) is less overhead
+  than learning/configuring a framework's conventions.
+Why we chose this: keeps the dependency count low and every line of
+rendering logic auditable, consistent with the project's general preference
+for hand-rolling small, well-understood pieces over pulling in libraries
+(see the rate-limiter decision for the same reasoning).
+Tradeoff / what breaks at scale: a real diff-viewer library would handle
+edge cases (e.g. very large diffs, multiple files in one diff, syntax
+highlighting) that the hand-rolled version doesn't — fine for single-file,
+small diffs from a demo repo; would need revisiting if diffs got
+substantially larger or spanned multiple files.
+
+**Verified, not assumed, responsive**: used Playwright to load both the
+list and detail pages at 375px (mobile), 768px (tablet), and 1440px
+(desktop) — the three breakpoints ENGINEERING_STANDARDS.md requires — plus
+the loading, empty-corpus 404, and populated states, checked for horizontal
+overflow at mobile width (none), and checked the browser console for
+errors (none beyond an intentionally-triggered 404 from testing the
+not-found state itself). This is the same "measure, don't assume" pattern
+as the RAG eval and load testing — a responsive-looking layout on desktop
+doesn't prove anything about mobile until it's actually rendered there.
+
+---
+
 ## 2026-09-08 Finding: Load testing — the real bottleneck is the LLM API, not our code
 
 Ran `backend/locustfile.py` (Locust) against `POST /logs/ingest` in three
