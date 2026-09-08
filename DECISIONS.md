@@ -97,6 +97,57 @@ know or care where a log actually came from."
 
 ---
 
+## 2026-09-08 Finding: Security review pass
+
+A systematic pass over the codebase against ENGINEERING_STANDARDS.md §4,
+reported honestly rather than as a blanket "secure" claim.
+
+**Checked and confirmed clean:**
+- No secrets in any git-tracked file (`git grep` for Anthropic/OpenAI key
+  prefixes across the repo — only in the gitignored `.env`).
+- No `shell=True` anywhere — all `subprocess` calls (git operations in
+  correlation.py) use argument lists, not shell string interpolation.
+- No raw string-formatted SQL outside the intentional demo bug — every real
+  query (retrieval.py's pgvector search, all SQLAlchemy ORM operations)
+  uses bind parameters.
+- Path traversal already guarded in `correlation.py`'s `blame_line`
+  (rejects any resolved path outside `repo_root` before running git blame —
+  see the original "canonical log schema" and "git-blame correlation"
+  decisions).
+- Neither the FastAPI app nor the Flask demo app run in debug mode — no
+  stack traces leak to clients on an unhandled exception (confirmed
+  earlier live: a missing-Redis failure returned a generic "Internal
+  Server Error" body, full traceback only in server-side logs).
+- All external input is Pydantic-validated (`NormalizedLogEvent`) before
+  use.
+
+**Known gaps, deferred deliberately rather than silently:**
+- **Rate limiter trusts `request.client.host` directly** — behind a real
+  reverse proxy/load balancer, this would be the proxy's IP, not the real
+  client's, making per-IP throttling ineffective (or spoofable via
+  `X-Forwarded-For` if naively trusted instead). Fine for direct-connection
+  local/demo use; needs proper trusted-proxy header handling before a real
+  deployment sees traffic through a load balancer — revisit at Phase 6
+  (deploy).
+- **No CORS configuration yet** — deferred because no frontend exists yet
+  to need it; must be added scoped to the frontend's actual origin (never
+  a wildcard) when the frontend lands, not copy-pasted from elsewhere.
+- **Celery tasks aren't idempotent** — `process_log_event` has no
+  dedup key, so a Celery retry (or, per the existing Redis-broker
+  reliability tradeoff, redelivery after a Redis restart) would insert a
+  duplicate `log_events`/`fix_suggestions` row rather than being a safe
+  no-op. Fixing this needs a content-based or explicit dedup key with a
+  unique constraint — a real gap against the "idempotency" standard,
+  deferred here in favor of load testing and the frontend, but the
+  concrete next step if revisited.
+Interview angle: "A security pass isn't a checkbox — I can tell you
+exactly which of these three gaps I'd fix first if this were going to
+production (the rate limiter, since it silently stops working exactly
+when you deploy behind a load balancer) and why the other two are lower
+priority right now."
+
+---
+
 ## 2026-09-08 Decision: Structured JSON logging with cross-process correlation IDs
 
 Chose: A small hand-rolled `JsonFormatter` (`app/logging_config.py`) plus a
