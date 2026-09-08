@@ -78,4 +78,16 @@ def correlate_error_to_commit(stack_trace: str, path_filter: str = "demo-repo") 
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
-    return blame_line(repo_root, file_path, line)
+    result = blame_line(repo_root, file_path, line)
+    if result is not None:
+        result["repo_root"] = str(repo_root)
+    return result
+
+
+def read_code_context(repo_root: Path, file_path: str, line: int, context: int = 5) -> str:
+    """Returns numbered source lines around `line`, for grounding the LLM
+    prompt in the actual code rather than just the error message."""
+    lines = (Path(repo_root) / file_path).read_text().splitlines()
+    start = max(0, line - 1 - context)
+    end = min(len(lines), line + context)
+    return "\n".join(f"{i + 1}: {lines[i]}" for i in range(start, end))

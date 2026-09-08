@@ -4,3 +4,4 @@ pydantic==2.9.2
 requests==2.32.3
 celery==5.4.0
 redis==5.0.8
+-e ../llm
