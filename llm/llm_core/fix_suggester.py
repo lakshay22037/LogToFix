@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from llm_core.client import ClaudeClient, LLMClient
+from llm_core.client import LLMClient, get_default_client
 from llm_core.prompts import SYSTEM_PROMPT, build_user_prompt
 from llm_core.schemas import FixSuggestion
 
@@ -15,7 +15,7 @@ def suggest_fix(
     code_context: str,
     client: Optional[LLMClient] = None,
 ) -> FixSuggestion:
-    client = client or ClaudeClient()
+    client = client or get_default_client()
     user_prompt = build_user_prompt(message, stack_trace, correlation, code_context)
 
     # Every LLM request/response is logged for later evaluation and

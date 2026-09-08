@@ -53,3 +53,32 @@ class ClaudeClient(LLMClient):
             raise LLMSuggestionError(f"Client configuration error: {e}") from e
 
         return response.parsed_output
+
+
+class FakeClient(LLMClient):
+    """Returns a canned suggestion instead of calling a real provider — for
+    developing/testing the pipeline without spending API credits on every
+    run. Never used unless explicitly selected (see get_default_client)."""
+
+    def suggest_fix(self, system_prompt: str, user_prompt: str) -> FixSuggestion:
+        return FixSuggestion(
+            explanation=(
+                "[FAKE CLIENT — no real LLM call made] This is a canned response "
+                "for local development. Set LLM_PROVIDER=claude (and a valid "
+                "ANTHROPIC_API_KEY) to get a real suggestion."
+            ),
+            diff="--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-# placeholder\n+# placeholder (fake fix)",
+            confidence=0.0,
+        )
+
+
+def get_default_client() -> LLMClient:
+    """Selects the provider via LLM_PROVIDER ("claude" | "fake"), defaulting
+    to "fake" — real API calls are opt-in, not accidental, so running the
+    pipeline locally never silently spends credits."""
+    provider = os.environ.get("LLM_PROVIDER", "fake").lower()
+    if provider == "claude":
+        return ClaudeClient()
+    if provider == "fake":
+        return FakeClient()
+    raise LLMSuggestionError(f"Unknown LLM_PROVIDER: {provider!r} (expected 'claude' or 'fake')")
