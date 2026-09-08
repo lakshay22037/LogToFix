@@ -77,8 +77,10 @@ _users = []
 @app.post("/users")
 def create_user():
     body = request.get_json(force=True, silent=True) or {}
-    email = body.get("email")
-    if not email:
+    try:
+        email = body["email"]
+    except KeyError:
+        log_users.error("Missing required field while creating user: %s", body, exc_info=True)
         return jsonify({"error": "email is required"}), 400
     _users.append({"email": email})
     return jsonify({"email": email}), 201
